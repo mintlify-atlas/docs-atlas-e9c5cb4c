@@ -1,0 +1,240 @@
+---
+title: "Trip Planner: Origin-to-Destination Transit Routing"
+sidebarTitle: "Trip Planner"
+description: "Search stops and landmarks, pick a timing mode, and compare tagged route options with walk, board, and ride steps from the timetable simulation engine."
+---
+
+The Trip Planner is the heart of City Metro Trip-Planner. Riders move through three connected screens — **Plan** (`/`), **Results** (`/results`), and **Itinerary** (`/trip`) — to search for an origin and destination, compare route options tagged by quality, and drill into a full step-by-step itinerary. Under the hood, every result is produced by a timetable simulation engine that runs entirely in the browser against the demonstration transit network.
+
+## Three-Screen Flow
+
+<Steps>
+  <Step title="Plan — choose your origin and destination">
+    The home screen at `/` presents two place-search fields and a timing selector. The rider types a stop name or landmark; `searchPlaces()` returns up to six ranked matches drawn from the combined list of stops and landmarks. A **My location** shortcut is always available and resolves to Union Station with a four-minute walk pre-pended to the itinerary.
+  </Step>
+  <Step title="Results — pick the best option">
+    After the rider taps **Find trips**, the app calls `findTrips(query)` and navigates to `/results`. Each returned trip is tagged automatically — **Fastest**, **Fewest transfers**, or **Least walking** — so at a glance the rider can compare trade-offs without reading every detail. Tapping a trip card advances to the Itinerary screen.
+  </Step>
+  <Step title="Itinerary — follow every step">
+    The `/trip` screen renders the full sequence of steps for the chosen trip: each walk, wait, board, ride, transfer, and arrival moment with its scheduled clock times. Riders can also see any active service alerts that affect the chosen lines or stops.
+  </Step>
+</Steps>
+
+## Place Search
+
+`searchPlaces()` is the only function that views call to populate origin and destination fields.
+
+```js title="js/trip-service.js"
+// Free-text place search: best matches first (name starts with the text, then contains every word).
+export function searchPlaces(query, limit = 6) {
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) return PLACES.filter(p => p.kind === 'stop' && stopById[p.id].hub).slice(0, limit);
+  const words = q.split(/\s+/);
+  const scored = [];
+  for (const p of PLACES) {
+    const n = p.name.toLowerCase();
+    if (n.startsWith(q)) scored.push([0, p]);
+    else if (words.every(w => n.includes(w))) scored.push([1, p]);
+  }
+  return scored.sort((a, b) => a[0] - b[0] || a[1].name.localeCompare(b[1].name)).slice(0, limit).map(s => s[1]);
+}
+```
+
+The returned array contains `Place` objects. Each place belongs to one of two kinds:
+
+<CardGroup cols={2}>
+  <Card title="stop" icon="train">
+    Directly maps to a transit stop. `walkMin` is `0` — no walk segment is added before or after the boarded vehicle.
+  </Card>
+  <Card title="landmark" icon="map-pin">
+    A named point of interest near a stop. `stopId` names the closest stop, and `walkMin` sets the walk distance in minutes that is prepended or appended to the itinerary.
+  </Card>
+</CardGroup>
+
+### My Location Shortcut
+
+When a rider selects **My location**, the place ID `my-location` is used. It resolves to Union Station with a four-minute walk:
+
+```js title="js/trip-service.js"
+export const MY_LOCATION = {
+  id: 'my-location',
+  name: 'My location',
+  kind: 'location',
+  stopId: 'union',
+  walkMin: 4
+};
+```
+
+When no query text is present, `searchPlaces('')` returns hub stops only — `union`, `downtown`, `deathstar`, and `airport` — as quick-start suggestions.
+
+## Timing Modes
+
+The query passed to `findTrips()` includes a `mode` field that controls how the timetable engine aligns results against the rider's requested time.
+
+<Tabs>
+  <Tab title="now">
+    The engine uses the current epoch time as the departure moment. The timetable simulation finds the next available departure for every candidate path from the given instant, so all results reflect what is actually available right now.
+
+    ```js
+    findTrips({ originId: 'union', destId: 'airport', mode: 'now', whenMs: Date.now() });
+    ```
+  </Tab>
+  <Tab title="depart">
+    The rider specifies a future departure time. `whenMs` carries that epoch timestamp and the engine plans forward from it, identical to `now` but anchored to the chosen time rather than the present moment.
+
+    ```js
+    findTrips({ originId: 'santa', destId: 'lakeview', mode: 'depart', whenMs: departEpochMs });
+    ```
+  </Tab>
+  <Tab title="arrive">
+    The rider specifies the latest acceptable arrival time. The engine works backwards using a binary search (`latestDeparture`) to find the latest possible departure that still meets the target — useful for "I need to be there by 18:30."
+
+    ```js
+    findTrips({ originId: 'cityhall', destId: 'tours', mode: 'arrive', whenMs: arriveByEpochMs });
+    ```
+  </Tab>
+</Tabs>
+
+## `findTrips()` Signature
+
+```js title="js/trip-service.js"
+/**
+ * query = { originId, destId, mode: 'now'|'depart'|'arrive', whenMs }
+ *         (whenMs = epoch ms; for 'now' pass the current time)
+ * demo  = optional preview switch: 'error' | 'empty' | 'slow'
+ */
+export async function findTrips(query, demo) { /* … */ }
+```
+
+<ParamField path="query.originId" type="string" required>
+  Place ID for the trip origin — any stop ID, landmark ID, or `"my-location"`.
+</ParamField>
+
+<ParamField path="query.destId" type="string" required>
+  Place ID for the trip destination.
+</ParamField>
+
+<ParamField path="query.mode" type="'now' | 'depart' | 'arrive'" required>
+  Timing mode. `'now'` and `'depart'` plan forward from `whenMs`; `'arrive'` plans backward to reach the destination by `whenMs`.
+</ParamField>
+
+<ParamField path="query.whenMs" type="number" required>
+  Epoch milliseconds. Pass `Date.now()` for `'now'`; pass a future or target timestamp for the other modes.
+</ParamField>
+
+<ParamField path="demo" type="'error' | 'empty' | 'slow'">
+  Optional demo override. Simulates an error, an empty result set, or a 2.5-second slow response for UI testing.
+</ParamField>
+
+### Return Shape
+
+`findTrips()` resolves to `{ trips: Trip[] }` and rejects on failure. Up to four trips are returned, ranked by arrival time (or latest departure for `arrive` mode), then filtered so that only trips within 40 minutes of the best option are shown.
+
+<ResponseField name="trips" type="Trip[]">
+  Array of trip objects, sorted best-first. Empty array when no route exists (same stop, unreachable stop, or `demo: 'empty'`).
+
+  <Expandable title="Trip fields">
+    <ResponseField name="id" type="number">
+      Zero-based index assigned after ranking.
+    </ResponseField>
+    <ResponseField name="tags" type="string[]">
+      Quality labels: `'Fastest'`, `'Fewest transfers'`, `'Least walking'`. Each tag is given to the single best trip for that criterion; a trip may hold more than one tag.
+    </ResponseField>
+    <ResponseField name="depart" type="number">
+      Epoch milliseconds when the trip departs the origin.
+    </ResponseField>
+    <ResponseField name="arrive" type="number">
+      Epoch milliseconds when the trip arrives at the destination.
+    </ResponseField>
+    <ResponseField name="duration" type="number">
+      Total journey time in minutes.
+    </ResponseField>
+    <ResponseField name="transfers" type="number">
+      Number of line changes (rides minus one, minimum zero).
+    </ResponseField>
+    <ResponseField name="walkMin" type="number">
+      Total walking time in minutes across all walk segments.
+    </ResponseField>
+    <ResponseField name="lineIds" type="string[]">
+      Ordered list of line IDs used by the trip (e.g. `['A', 'B']`).
+    </ResponseField>
+    <ResponseField name="steps" type="Step[]">
+      Full ordered sequence of itinerary steps — see below.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Trip Tags
+
+When more than one trip is returned the engine awards exactly one trip each of three quality tags. A single trip can earn multiple tags if it wins on more than one dimension.
+
+```js title="js/trip-service.js"
+const mark = (name, score) => {
+  const best = Math.min(...trips.map(score));
+  const winner = trips.filter(t => score(t) === best)
+    .sort((a, b) => a.duration - b.duration)[0];
+  winner.tags.push(name);
+};
+if (trips.length > 1) {
+  mark('Fastest',          t => t.duration);
+  mark('Fewest transfers', t => t.transfers);
+  mark('Least walking',    t => t.walkMin);
+}
+```
+
+| Tag | Criterion |
+|-----|-----------|
+| `Fastest` | Shortest total journey `duration` |
+| `Fewest transfers` | Lowest `transfers` count |
+| `Least walking` | Lowest total `walkMin` |
+
+## Itinerary Step Types
+
+Each `Trip` contains a `steps` array. Every step has a `type` that the Itinerary view uses to choose its icon and label style.
+
+<Accordion title="walk">
+  A walk from the origin to the first transit stop. `stopId` is the stop being walked to; `minutes` is the walk time. Present only when the origin place has `walkMin > 0` (e.g. a landmark or My Location).
+</Accordion>
+
+<Accordion title="board">
+  The rider boards a vehicle. Carries `lineId`, `stopId`, and the departure time. Zero duration — `start` equals `end`.
+</Accordion>
+
+<Accordion title="ride">
+  Travel on a line between stops. `stopIds` lists the intermediate stops passed through; `stopCount` is the number of hops; `minutes` is the riding time.
+</Accordion>
+
+<Accordion title="transfer">
+  A platform change between two lines at the same stop. Adds a fixed two-minute (`TRANSFER_MIN`) buffer.
+</Accordion>
+
+<Accordion title="wait">
+  Time spent on the platform waiting for the next departure. `detail` shows the line headway, e.g. `"every 10 min"`.
+</Accordion>
+
+<Accordion title="arrive">
+  Final arrival at the destination stop. Zero duration. Present when the destination place has `walkMin === 0`.
+</Accordion>
+
+<Accordion title="walk-final">
+  A walk from the alighting stop to the destination landmark. Present when the destination has `walkMin > 0`. Replaces the `arrive` step in those cases.
+</Accordion>
+
+## Demo States
+
+Pass a second argument to `findTrips()` to exercise UI loading and error states during development:
+
+```js
+// Simulates a network error — the promise rejects
+findTrips(query, 'error');
+
+// Returns an empty trip list — shows the "no results" empty state
+findTrips(query, 'empty');
+
+// Adds a 2.5-second artificial delay — tests loading spinners
+findTrips(query, 'slow');
+```
+
+<Note>
+  All trip results, stops, landmarks, and timetable data are demonstration content sourced from `demo-data.js`. They do not represent real service. Replace `trip-service.js` and `demo-data.js` with live data when connecting to a real network.
+</Note>

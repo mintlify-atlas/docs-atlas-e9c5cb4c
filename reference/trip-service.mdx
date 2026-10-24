@@ -1,0 +1,312 @@
+---
+title: "trip-service.js — Places, Trips, and Alerts API"
+sidebarTitle: "trip-service.js"
+description: "Full API reference for trip-service.js: searchPlaces, findTrips, alertsForTrip, allLines, allStops, and the setLatency testing helper for the demo network."
+---
+
+`trip-service.js` is the **single data boundary** between the views and the underlying transit network. All place lookups, route queries, and alert lookups go through this module; nothing outside it knows how trips are computed. Today the module answers from the demonstration network in `demo-data.js`, but the four core exports — `searchPlaces`, `getPlace`, `findTrips`, and `alertsForTrip` — preserve stable return shapes so a real backend can be substituted later by replacing only this file's internals.
+
+---
+
+## Constants
+
+### `MY_LOCATION`
+
+A synthetic `Place` object representing the rider's current GPS position. It is included in place lookups and resolves to the nearest demonstration stop.
+
+```js
+export const MY_LOCATION = {
+  id:      'my-location',
+  name:    'My location',
+  kind:    'location',
+  stopId:  'union',
+  walkMin: 4
+};
+```
+
+<ResponseField name="id" type="string">Always `'my-location'`.</ResponseField>
+<ResponseField name="name" type="string">Always `'My location'`.</ResponseField>
+<ResponseField name="kind" type="string">Always `'location'`.</ResponseField>
+<ResponseField name="stopId" type="string">The nearest stop in the demo network (`'union'`).</ResponseField>
+<ResponseField name="walkMin" type="number">Estimated walk time in minutes from the GPS position to the nearest stop (`4`).</ResponseField>
+
+---
+
+## Place lookups
+
+### `getPlace(id)` → `Place | null`
+
+Returns the `Place` with the given `id`, or `null` if no match exists. Searches across stops, landmarks, and `MY_LOCATION`.
+
+<ParamField path="id" type="string" required>
+  The place identifier (e.g. `'union'`, `'my-location'`, a landmark ID).
+</ParamField>
+
+---
+
+### `searchPlaces(query, limit?)`
+
+Free-text search across all stops and landmarks. Returns results sorted by relevance then alphabetically.
+
+<ParamField path="query" type="string" required>
+  The search string entered by the user. Pass an empty string or whitespace to retrieve hub stops.
+</ParamField>
+
+<ParamField path="limit" type="number" default="6">
+  Maximum number of results to return.
+</ParamField>
+
+Returns `Place[]`.
+
+**Scoring rules:**
+
+<Steps>
+  <Step title="Empty query">
+    Returns up to `limit` stops whose `hub` flag is set (major interchange stations), sorted by their natural order in the data.
+  </Step>
+  <Step title="Exact prefix match — score 0">
+    Places whose lowercased name starts with the full lowercased query string appear first.
+  </Step>
+  <Step title="All-words match — score 1">
+    Places whose name contains every whitespace-separated word in the query appear second.
+  </Step>
+  <Step title="Sort and truncate">
+    Results within each score group are sorted alphabetically by name, then the list is truncated to `limit`.
+  </Step>
+</Steps>
+
+```js
+import { searchPlaces } from './js/trip-service.js';
+
+const hubs    = searchPlaces('');           // major stops, up to 6
+const results = searchPlaces('central', 8); // prefix match first
+```
+
+#### `Place` object shape
+
+<ResponseField name="id" type="string">Unique place identifier.</ResponseField>
+<ResponseField name="name" type="string">Display name shown in the UI.</ResponseField>
+<ResponseField name="kind" type="string">`'stop'`, `'landmark'`, or `'location'`.</ResponseField>
+<ResponseField name="stopId" type="string">The nearest stop ID in the transit network (used for routing).</ResponseField>
+<ResponseField name="walkMin" type="number">Walk time in minutes from this place to/from `stopId`. `0` for stops themselves.</ResponseField>
+
+---
+
+### `resolvePlaceName(text)` → `Place | null`
+
+Case-insensitive exact-name lookup across all places including `MY_LOCATION`. Used when a user has typed a complete place name and moved focus away from the input.
+
+<ParamField path="text" type="string" required>
+  The full place name as typed by the user. Leading/trailing whitespace is trimmed.
+</ParamField>
+
+Returns the matching `Place` object, or `null` if no place has that exact name.
+
+```js
+import { resolvePlaceName } from './js/trip-service.js';
+
+const place = resolvePlaceName('Union Station');
+// → { id: 'union', name: 'Union Station', kind: 'stop', stopId: 'union', walkMin: 0 }
+```
+
+---
+
+## Stop and line accessors
+
+### `getStop(id)` → `Stop | null`
+
+Returns the raw `Stop` record for `id`, or `null`.
+
+<ParamField path="id" type="string" required>Stop identifier.</ParamField>
+
+---
+
+### `getLine(id)` → `Line | null`
+
+Returns the raw `Line` record for `id`, or `null`.
+
+<ParamField path="id" type="string" required>Line identifier.</ParamField>
+
+---
+
+### `allStops()` → `Stop[]`
+
+Returns a shallow copy of every stop in the demonstration network.
+
+---
+
+### `allLines()` → `Line[]`
+
+Returns a shallow copy of every line in the demonstration network.
+
+---
+
+### `linesAtStop(stopId)` → `Line[]`
+
+Returns every line that serves the given stop.
+
+<ParamField path="stopId" type="string" required>The stop identifier to look up.</ParamField>
+
+```js
+import { linesAtStop } from './js/trip-service.js';
+
+const lines = linesAtStop('union');
+// → all Line objects whose stops array includes 'union'
+```
+
+---
+
+## Trip planning
+
+### `findTrips(query, demo?)`
+
+The primary route-planning function. Runs the demonstration timetable simulation and returns up to four viable trip options, tagged with comparative labels.
+
+<ParamField body="query" type="object" required>
+  The route query object.
+  <Expandable title="query fields">
+    <ParamField body="originId" type="string" required>
+      ID of the departure place (must be a valid `Place` ID in the demo network).
+    </ParamField>
+    <ParamField body="destId" type="string" required>
+      ID of the arrival place (must be a valid `Place` ID in the demo network).
+    </ParamField>
+    <ParamField body="mode" type="'now' | 'depart' | 'arrive'" required>
+      Whether `whenMs` represents the current time (`'now'`), a desired departure time (`'depart'`), or a desired arrival time (`'arrive'`). For `'now'` and `'depart'`, trips depart at or after `whenMs`. For `'arrive'`, trips are the latest that still arrive by `whenMs`.
+    </ParamField>
+    <ParamField body="whenMs" type="number" required>
+      Reference time as epoch milliseconds.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+<ParamField body="demo" type="'error' | 'empty' | 'slow'">
+  Optional testing override. `'error'` causes the function to throw, `'empty'` returns an empty trip list, `'slow'` adds a 2 500 ms simulated delay (default delay is 450 ms, configurable via `setLatency`).
+</ParamField>
+
+Returns `Promise<{ trips: Trip[] }>`.
+
+<Warning>
+  Throws `Error('That place is not part of the demonstration network.')` if either `originId` or `destId` cannot be resolved to a `Place`. This is a plain `Error`, not an `OAuthError`.
+</Warning>
+
+#### Trip selection logic
+
+<Steps>
+  <Step title="Enumerate paths">
+    Finds all routes between origin stop and destination stop using depth-first search, permitting at most 3 rides, 5 legs total, and one walk transfer.
+  </Step>
+  <Step title="Deduplicate by line sequence">
+    Keeps only the fastest trip per unique line-sequence key to avoid showing redundant options.
+  </Step>
+  <Step title="Filter by time window">
+    Retains only trips within 40 minutes of the best option, then caps the list at 4 results.
+  </Step>
+  <Step title="Tag winners">
+    Assigns the comparative labels `'Fastest'`, `'Fewest transfers'`, and `'Least walking'` when multiple results exist.
+  </Step>
+</Steps>
+
+#### `Trip` object shape
+
+<ResponseField name="id" type="number">Zero-based index assigned after sorting.</ResponseField>
+<ResponseField name="depart" type="number">Departure time in epoch milliseconds.</ResponseField>
+<ResponseField name="arrive" type="number">Arrival time in epoch milliseconds.</ResponseField>
+<ResponseField name="duration" type="number">Total journey time in minutes.</ResponseField>
+<ResponseField name="transfers" type="number">Number of transfers (rides minus one, minimum 0).</ResponseField>
+<ResponseField name="rides" type="number">Number of transit vehicle rides.</ResponseField>
+<ResponseField name="walkMin" type="number">Total walking time in minutes across the whole journey.</ResponseField>
+<ResponseField name="lineIds" type="string[]">Ordered list of line IDs used on this trip.</ResponseField>
+<ResponseField name="boardingStop" type="string">Display name of the first boarding stop.</ResponseField>
+<ResponseField name="alightStop" type="string">Display name of the final alighting stop.</ResponseField>
+<ResponseField name="tags" type="string[]">Comparative labels: `'Fastest'`, `'Fewest transfers'`, `'Least walking'`. Empty array when only one trip is returned.</ResponseField>
+<ResponseField name="steps" type="Step[]">
+  Ordered list of journey steps.
+  <Expandable title="Step fields">
+    <ResponseField name="type" type="string">Step kind: `'walk'`, `'wait'`, `'board'`, `'ride'`, `'transfer'`, `'walk-final'`, or `'arrive'`.</ResponseField>
+    <ResponseField name="title" type="string">Primary display string (e.g. `'Board Red Line toward Central'`).</ResponseField>
+    <ResponseField name="detail" type="string">Secondary display string.</ResponseField>
+    <ResponseField name="start" type="number">Step start time in epoch milliseconds.</ResponseField>
+    <ResponseField name="end" type="number">Step end time in epoch milliseconds.</ResponseField>
+    <ResponseField name="minutes" type="number">Duration of the step in minutes (omitted for zero-duration steps like `'board'` and `'arrive'`).</ResponseField>
+    <ResponseField name="lineId" type="string">Line ID (present on `'wait'`, `'board'`, `'ride'`, and `'transfer'` steps).</ResponseField>
+    <ResponseField name="stopId" type="string">The key stop associated with this step.</ResponseField>
+    <ResponseField name="stopIds" type="string[]">Intermediate stop IDs passed through during a `'ride'` step.</ResponseField>
+    <ResponseField name="stopCount" type="number">Number of stops ridden (present on `'ride'` steps).</ResponseField>
+    <ResponseField name="transfer" type="boolean">Present and `true` on walk steps that are mid-journey transfers.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+```js
+import { findTrips } from './js/trip-service.js';
+
+const { trips } = await findTrips({
+  originId: 'my-location',
+  destId:   'central',
+  mode:     'now',
+  whenMs:   Date.now()
+});
+
+trips.forEach(t => {
+  console.log(`${t.tags.join(', ')} — ${t.duration} min, ${t.transfers} transfer(s)`);
+});
+```
+
+---
+
+## Alerts
+
+### `alertsForLine(lineId)` → `Alert[]`
+
+Returns every active alert whose `lines` array includes `lineId`.
+
+<ParamField path="lineId" type="string" required>
+  The line identifier to filter alerts for.
+</ParamField>
+
+---
+
+### `alertsForTrip(trip)` → `Alert[]`
+
+Returns every alert that is relevant to a given trip — either because the alert's `lines` overlap the trip's `lineIds`, or because the alert's `stops` overlap any stop visited on the journey.
+
+<ParamField path="trip" type="Trip" required>
+  A `Trip` object as returned by `findTrips`.
+</ParamField>
+
+```js
+import { findTrips, alertsForTrip } from './js/trip-service.js';
+
+const { trips } = await findTrips({ originId: 'union', destId: 'north', mode: 'now', whenMs: Date.now() });
+const alerts = alertsForTrip(trips[0]);
+alerts.forEach(a => console.log(a.title));
+```
+
+---
+
+### `allAlerts()` → `Alert[]`
+
+Returns a shallow copy of every alert in the demonstration dataset, regardless of line or stop.
+
+---
+
+## Testing helper
+
+### `setLatency(ms)`
+
+Overrides the simulated async delay applied inside `findTrips` for demo mode. Useful in tests to avoid waiting 450 ms per call.
+
+<ParamField path="ms" type="number" required>
+  New delay in milliseconds. The default is `450`. Set to `0` in unit tests for instant responses.
+</ParamField>
+
+```js
+import { setLatency, findTrips } from './js/trip-service.js';
+
+beforeAll(() => setLatency(0));
+afterAll(()  => setLatency(450));
+```
+
+<Info>
+  The `demo` parameter `'slow'` in `findTrips` hard-codes a 2 500 ms delay and ignores the value set by `setLatency`. Use `'slow'` to test loading-state UI, not for general test speed control.
+</Info>

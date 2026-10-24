@@ -1,0 +1,215 @@
+---
+title: "Customize the Look of City Metro Trip-Planner"
+sidebarTitle: "Theming"
+description: "Edit CSS custom properties in css/app.css to match your transit agency's brand colors, typography, and corner radii — no build step or preprocessor required."
+---
+
+All visual styling in City Metro Trip-Planner is driven by a single block of CSS custom properties declared on `:root` at the top of `css/app.css`. Changing any property there cascades instantly throughout the entire UI — cards, buttons, badges, the bottom navigation bar, the header, form fields, alerts, and the schematic map. Because the app has no build step, you edit the file directly and refresh the browser.
+
+## The `:root` custom properties
+
+The complete set of design tokens, exactly as they appear in `css/app.css`:
+
+```css title="css/app.css — :root block"
+:root {
+  --font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+
+  /* ── backgrounds ── */
+  --bg:   #eef2f7;   /* page background */
+  --bg-2: #e6ebf2;   /* slightly deeper background (hover states) */
+  --card: #fff;      /* card / sheet surface */
+
+  /* ── text & borders ── */
+  --ink:   #0f172a;  /* primary text */
+  --ink-2: #334155;  /* secondary text */
+  --muted: #64748b;  /* tertiary / placeholder text */
+  --line:  #e2e8f0;  /* dividers and input borders */
+
+  /* ── primary action color ── */
+  --blue:   #1d4ed8; /* buttons, links, active states */
+  --blue-d: #1e40af; /* hover / pressed */
+  --blue-l: #eff6ff; /* light tint (active nav pill, focus ring fill) */
+
+  /* ── semantic colors ── */
+  --black:   #0a0a0a;
+  --green:   #15803d; --green-l: #f0fdf4;
+  --amber:   #b45309; --amber-l: #fffbeb;
+  --red:     #b91c1c; --red-l:   #fef2f2;
+
+  /* ── shape ── */
+  --r:    22px;  /* large card radius */
+  --r-sm: 16px;  /* input / small card radius */
+
+  /* ── elevation ── */
+  --shadow:    0 1px 2px rgba(15,23,42,.06), 0 6px 18px rgba(15,23,42,.06);
+  --shadow-lg: 0 12px 36px rgba(15,23,42,.18);
+
+  /* ── layout ── */
+  --hdr-h:  60px; /* sticky header height */
+  --bnav-h: 64px; /* bottom navigation bar height */
+}
+```
+
+<Note>
+  You can also declare an override block anywhere **after** the default `:root` in `app.css`, or in a separate stylesheet loaded after `app.css`, without touching the original token values. This makes it easier to track your brand-specific changes.
+</Note>
+
+## Token reference
+
+<Accordion title="Backgrounds — --bg, --bg-2, --card">
+  | Property | Default | Used for |
+  |----------|---------|----------|
+  | `--bg`   | `#eef2f7` | Page background; the light blue-gray wash behind cards |
+  | `--bg-2` | `#e6ebf2` | Hover and pressed states on row buttons and drawer items |
+  | `--card` | `#fff`    | Card and sheet surfaces (`.card`, `.drawer`, `.hdr`, `.bnav`) |
+
+  Changing `--bg` and `--card` together controls the overall light/dark feel of the app. Setting `--card: #1e293b` and `--bg: #0f172a` is the starting point for a dark-mode theme.
+</Accordion>
+
+<Accordion title="Text & borders — --ink, --ink-2, --muted, --line">
+  | Property  | Default   | Used for |
+  |-----------|-----------|----------|
+  | `--ink`   | `#0f172a` | Headings, primary labels, bold weights |
+  | `--ink-2` | `#334155` | Secondary body copy, sub-labels |
+  | `--muted` | `#64748b` | Placeholder text, metadata, time strings |
+  | `--line`  | `#e2e8f0` | Dividers, input borders, card separators |
+</Accordion>
+
+<Accordion title="Primary color — --blue, --blue-d, --blue-l">
+  | Property   | Default   | Used for |
+  |------------|-----------|----------|
+  | `--blue`   | `#1d4ed8` | Primary buttons (`.btn.primary`), links, active bottom-nav item, focus rings |
+  | `--blue-d` | `#1e40af` | Hover/pressed state of primary buttons |
+  | `--blue-l` | `#eff6ff` | Active nav pill fill, focus ring background, light-mode chip backgrounds |
+
+  Rename these to your agency's brand color. The three values should be: base, a ~10% darker shade for hover, and a very pale tint (~5% opacity over white) for pill fills and focus rings.
+</Accordion>
+
+<Accordion title="Semantic colors — green, amber, red">
+  | Property    | Default   | Used for |
+  |-------------|-----------|----------|
+  | `--green`   | `#15803d` | "On time" / positive status text |
+  | `--green-l` | `#f0fdf4` | Success banner background |
+  | `--amber`   | `#b45309` | Warning alert text, warning banner foreground |
+  | `--amber-l` | `#fffbeb` | Warning banner / chip background |
+  | `--red`     | `#b91c1c` | Error states, field validation, error banner text |
+  | `--red-l`   | `#fef2f2` | Error banner / form error background |
+  | `--black`   | `#0a0a0a` | Icon circles (`.ic-circle`), dark button (`.btn.dark`), toast background |
+</Accordion>
+
+<Accordion title="Shape — --r, --r-sm">
+  | Property | Default | Used for |
+  |----------|---------|----------|
+  | `--r`    | `22px`  | Large cards, main action cards |
+  | `--r-sm` | `16px`  | Inputs, small cards, autocomplete dropdowns |
+
+  Setting both to `8px` gives the app a square, corporate look. Setting them to `0` removes all rounding entirely.
+</Accordion>
+
+<Accordion title="Elevation — --shadow, --shadow-lg">
+  | Property      | Default | Used for |
+  |---------------|---------|----------|
+  | `--shadow`    | two-layer soft shadow | Standard card lift |
+  | `--shadow-lg` | `0 12px 36px rgba(15,23,42,.18)` | Drawer, autocomplete dropdown |
+
+  On dark backgrounds, reduce the shadow opacity or switch to an inset border approach by changing `--shadow` to `none` and giving cards a `1px` border instead.
+</Accordion>
+
+<Accordion title="Layout heights — --hdr-h, --bnav-h">
+  | Property   | Default | Used for |
+  |------------|---------|----------|
+  | `--hdr-h`  | `60px`  | Sticky header height; used to calculate scroll padding and sticky offsets |
+  | `--bnav-h` | `64px`  | Bottom navigation bar height; used for toast position and page bottom padding |
+
+  Increase these if you add a second header row or a taller brand bar. The layout arithmetic is done exclusively through these variables, so changing a value here is sufficient.
+</Accordion>
+
+## Rebranding — minimum required changes
+
+To ship the app under a different transit brand, these are the five targeted edits:
+
+```css title="css/app.css — brand override block"
+/* ── Brand: Acme Transit ── */
+:root {
+  /* 1. Replace the primary blue with your brand color */
+  --blue:   #006847;   /* Acme green */
+  --blue-d: #00512f;
+  --blue-l: #e6f4ef;
+
+  /* 2. Swap the page background if needed */
+  --bg:   #f0f5f2;
+  --bg-2: #e2ece7;
+
+  /* 3. Update the font stack (add a <link> to index.html for web fonts) */
+  --font: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+```
+
+## Wordmark accent color
+
+The `.wordmark span` element renders the second word of the agency name ("Metro" in "City **Metro**") using `var(--blue)`. It picks up your brand color automatically once you update `--blue` — no HTML change needed.
+
+```css title="css/app.css — wordmark rule (do not change)"
+.wordmark span { color: var(--blue); }
+```
+
+## Line and stop badge colors
+
+Transit line badges (the colored pill with the line letter or number) are not driven by CSS custom properties. Their colors come from the `color` and `textColor` fields on each entry in the `LINES` array in `js/demo-data.js`. Update those fields to match your real line color scheme:
+
+```js title="js/demo-data.js — LINES color fields"
+export const LINES = [
+  {
+    id: 'A', name: 'A Line', type: 'rail',
+    color: '#0b6fba',     // badge background
+    textColor: '#ffffff', // badge foreground
+    // ...
+  },
+  {
+    id: 'B', name: 'B Line', type: 'rail',
+    color: '#d6181f',
+    textColor: '#ffffff',
+    // ...
+  },
+  // ...
+];
+```
+
+Ensure sufficient contrast between `color` and `textColor` for WCAG AA compliance (≥ 4.5:1 for the small text in badges).
+
+## Accessibility overrides — do not remove
+
+`css/app.css` includes two media-query blocks at the very bottom of the file that must not be deleted:
+
+```css title="css/app.css — accessibility overrides"
+/* Honour the user's reduced-motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+/* Windows High Contrast / Forced Colors mode */
+@media (forced-colors: active) {
+  .btn.primary, .btn.dark { border-color: ButtonText; }
+  .seg-opt input:checked + span { outline: 2px solid Highlight; }
+}
+```
+
+The `prefers-reduced-motion` block disables all CSS animations (shimmer skeleton, spinner, toast slide, drawer transition) for users who have requested reduced motion in their OS accessibility settings. The `forced-colors` block ensures primary and dark buttons remain distinguishable in Windows High Contrast mode.
+
+<Note>
+  To add a web font, add a `<link rel="preconnect">` and a `<link rel="stylesheet">` tag to the `<head>` of **both** `index.html` and `callback.html`, then update `--font` in `css/app.css`. For example, to use Inter from Google Fonts:
+
+  ```html title="index.html (and callback.html)"
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800&display=swap">
+  ```
+
+  ```css title="css/app.css"
+  --font: "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  ```
+</Note>

@@ -1,0 +1,163 @@
+---
+title: "config.js — AUTH and LINKS Configuration Reference"
+sidebarTitle: "config.js"
+description: "Reference for every AUTH and LINKS field in config.js: which keys are required for sign-in, their defaults, and how unconfigured LINKS fields affect the menu."
+---
+
+`config.js` is the single file you edit to wire City Metro Trip-Planner to a real transit-account provider and to add deep-links to external City Metro web properties. The app ships with all fields intentionally blank so nothing silently points to a placeholder URL. Sign-in functionality is disabled until `issuer` and `clientId` are filled in; the rest of the app works without them.
+
+<Note>
+  This is a **public OAuth client** using PKCE. There is no client secret anywhere in this codebase, so it is safe to commit real values for `issuer`, `clientId`, and the link URLs. Never add a client secret.
+</Note>
+
+---
+
+## Source
+
+```js title="js/config.js"
+// ─────────────────────────────────────────────────────────────────────────────
+//  City Metro Trip-Planner — configuration
+//  Everything that has to be supplied before real sign-in works lives here.
+//  Nothing in this file is a secret: this app is a *public* OAuth client (PKCE), so there is no client secret.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const AUTH = {
+  // The sign-in service. This origin is fixed; the application slug is NOT known yet.
+  origin: 'https://auth.citymetro.xyz',
+
+  // REQUIRED — the OpenID Connect issuer of the Authentik application created for this app, with trailing slash:
+  //   https://auth.citymetro.xyz/application/o/<APPLICATION_SLUG>/
+  // Leave empty until the application exists. (Not guessed on purpose.)
+  issuer: '',
+
+  // REQUIRED — the Client ID of that application (a public client; no secret is ever used or stored here).
+  clientId: '',
+
+  // Optional — where the provider sends people back after sign-in. Empty = "<this site>/callback.html".
+  // Whatever it resolves to must be registered as a redirect URI on the provider (the Account/Sign-in screens show it).
+  redirectUri: '',
+
+  // Optional — where the provider sends people after "Sign out of all City Metro services". Must be registered too.
+  postLogoutRedirectUri: '',
+
+  scopes: 'openid profile email'
+};
+
+// Links for the menu. Empty string = not configured yet (the menu shows the item as unavailable).
+// URLs are intentionally NOT filled in: supply the real ones.
+export const LINKS = {
+  website: '',          // City Metro website
+  transitPolice: '',    // City Metro Transit Police website
+  support: '',          // Support
+  accountSettings: ''   // Optional: transit-account settings page. Empty = "<AUTH.origin>/if/user/" (Authentik's own user settings)
+};
+```
+
+---
+
+## `AUTH` object
+
+The `AUTH` object controls every aspect of the OpenID Connect sign-in flow. It is imported by `oauth.js` and by `shell.js`.
+
+<ParamField body="origin" type="string" required>
+  The base origin of the City Metro auth service. Fixed value: `https://auth.citymetro.xyz`. This is used by `shell.js` to render the sign-in provider label and by `oauth.js` as the fallback `accountSettings` URL. Do not change it unless the auth service moves.
+</ParamField>
+
+<ParamField body="issuer" type="string">
+  **Required before sign-in works.** The full OpenID Connect issuer URL for the Authentik application created for this app, including a trailing slash. Format:
+
+  ```
+  https://auth.citymetro.xyz/application/o/<APPLICATION_SLUG>/
+  ```
+
+  Left empty, `oauth.js` will refuse every sign-in attempt with `OAuthError('not_configured', …)`. The field is validated by `missingConfig()` — it must be non-empty and must not contain `<` or `>`.
+</ParamField>
+
+<ParamField body="clientId" type="string">
+  **Required before sign-in works.** The Client ID of the Authentik public-client application. Found in the Authentik admin panel under the application's provider settings. Like `issuer`, an empty value causes `missingConfig()` to include `'clientId'` in its return array, blocking all sign-in attempts.
+</ParamField>
+
+<ParamField body="redirectUri" type="string">
+  Optional. The URI the provider redirects the browser to after authorization. When empty, `oauth.js` computes `<window.location.origin>/callback.html` at runtime. Whatever value is used — explicit or computed — **must be registered as an allowed redirect URI** in the Authentik application configuration. The Account and Sign-in screens display the effective redirect URI to assist with setup.
+</ParamField>
+
+<ParamField body="postLogoutRedirectUri" type="string">
+  Optional. The URI the provider redirects the browser to after a global sign-out (`signOutEverywhere()`). When empty, no `post_logout_redirect_uri` parameter is sent to the provider. If set, the URI **must be registered** on the provider's application.
+</ParamField>
+
+<ParamField body="scopes" type="string" default="'openid profile email'">
+  Space-separated OAuth scopes to request. The default value requests the OIDC standard claims needed to populate the user profile (`name`, `email`, `preferred_username`). Change only if your Authentik application defines additional custom scopes required by the app.
+</ParamField>
+
+---
+
+## `LINKS` object
+
+The `LINKS` object provides URLs for external City Metro web properties shown in the slide-in menu drawer. Every key defaults to an empty string. When a key is empty, `shell.js` renders the corresponding menu item in a visually disabled state and shows a tooltip: *"Link not configured yet. Add its URL in js/config.js."*
+
+<ParamField body="website" type="string">
+  The main City Metro public website URL. Shown in the drawer as **City Metro website** with an external-link icon when configured.
+</ParamField>
+
+<ParamField body="transitPolice" type="string">
+  The City Metro Transit Police website URL. Shown as **City Metro Transit Police** in the drawer.
+</ParamField>
+
+<ParamField body="support" type="string">
+  The rider support page URL. Shown as **Support** in the drawer.
+</ParamField>
+
+<ParamField body="accountSettings" type="string">
+  Optional link to a custom transit-account settings page. When empty, the Account screen falls back to `AUTH.origin + '/if/user/'` — Authentik's built-in user self-service portal — so riders can always manage their account even before this field is configured.
+</ParamField>
+
+---
+
+## Minimal configuration example
+
+The following snippet shows the minimum changes needed to enable sign-in for a real deployment. Replace the placeholder values with those from your Authentik application.
+
+```js title="js/config.js (configured)"
+export const AUTH = {
+  origin:   'https://auth.citymetro.xyz',
+  issuer:   'https://auth.citymetro.xyz/application/o/trip-planner/',
+  clientId: 'AbCdEf1234567890AbCdEf1234567890AbCd',
+  redirectUri: '',             // leave empty to use <origin>/callback.html automatically
+  postLogoutRedirectUri: '',
+  scopes: 'openid profile email'
+};
+
+export const LINKS = {
+  website:         'https://www.citymetro.xyz',
+  transitPolice:   'https://police.citymetro.xyz',
+  support:         'https://www.citymetro.xyz/contact',
+  accountSettings: ''  // empty → falls back to https://auth.citymetro.xyz/if/user/
+};
+```
+
+<Tip>
+  After updating `issuer` and `clientId`, open the app, navigate to **Account**, and confirm that the **Sign in** button shows the correct provider hostname (`auth.citymetro.xyz`). If the hostname is wrong, recheck `AUTH.origin` and `AUTH.issuer`.
+</Tip>
+
+---
+
+## Configuration validation
+
+`oauth.js` exports two helpers that read directly from `AUTH` to report configuration status:
+
+<CardGroup cols={2}>
+  <Card title="missingConfig()" icon="triangle-exclamation">
+    Returns `string[]` of missing keys (`'issuer'`, `'clientId'`, or both). An empty array means sign-in is ready.
+  </Card>
+  <Card title="isConfigured()" icon="circle-check">
+    Returns `boolean` — `true` when both required keys are present. Equivalent to `missingConfig().length === 0`.
+  </Card>
+</CardGroup>
+
+```js
+import { isConfigured, missingConfig } from './js/oauth.js';
+
+if (!isConfigured()) {
+  console.warn('Sign-in disabled. Missing config keys:', missingConfig().join(', '));
+}
+```

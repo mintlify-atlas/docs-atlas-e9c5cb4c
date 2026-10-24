@@ -1,0 +1,190 @@
+---
+title: "Service Alerts: Track Delays and Detours by Line"
+sidebarTitle: "Alerts"
+description: "Filter service alerts by transit line or stop, tell warning from info severity at a glance, and retrieve per-trip alerts via allAlerts and alertsForTrip."
+---
+
+The Alerts view at `/alerts` gives riders a single place to check every active service disruption — delays, detours, elevator outages, and planned works — across the entire City Metro network. A row of filter chips narrows the list to a specific line or to stop-level notices, while severity levels provide immediate visual triage. The same alert data that powers the view is also surfaced inline on the Itinerary screen through `alertsForTrip()`, so riders never need to leave their route to discover a problem.
+
+## The `/alerts` View
+
+When the router loads the `/alerts` path it calls `renderAlerts(main)` from `js/alerts.js`, which writes the full alerts UI into the `<main>` element. The view starts by fetching all lines via `allLines()` to build the filter chip row, then calls `allAlerts()` and renders every alert as a card inside an `aria-live` region so screen-reader users hear updates when the filter changes.
+
+```js title="js/alerts.js"
+export function renderAlerts(main) {
+  const lines = allLines();
+  let filter = 'all';
+  // … builds filter chips for each line and a "Stops & stations" chip …
+  function draw() {
+    const items = allAlerts().filter(a =>
+      filter === 'all'
+        ? true
+        : filter === 'general'
+          ? !a.lines.length
+          : a.lines.includes(filter)
+    );
+    // … renders alert cards or an empty state …
+  }
+  // Filter chip click handler updates `filter` and calls draw()
+  main.querySelector('.filters').addEventListener('click', e => {
+    const b = e.target.closest('[data-f]'); if (!b) return;
+    filter = b.dataset.f;
+    main.querySelectorAll('[data-f]').forEach(x =>
+      x.setAttribute('aria-pressed', String(x === b))
+    );
+    draw();
+  });
+  draw();
+}
+```
+
+## Filter Chips
+
+Four types of filter chip are rendered above the alert list:
+
+<CardGroup cols={2}>
+  <Card title="All" icon="list">
+    The default chip (`data-f="all"`). Shows every alert regardless of affected lines or stops. Always rendered first.
+  </Card>
+  <Card title="Per-line chips" icon="train">
+    One chip per line returned by `allLines()`. Each chip uses the line's colour badge (`lineBadge(l)`) alongside the line name. Selecting a chip filters to alerts whose `lines[]` array includes that line ID.
+  </Card>
+  <Card title="Stops &amp; stations" icon="map-pin">
+    The `data-f="general"` chip. Matches alerts that have an empty `lines` array — i.e. notices tied to a specific stop rather than to a service line, such as elevator outages.
+  </Card>
+</CardGroup>
+
+The active chip's `aria-pressed` attribute is set to `"true"`; all others are set to `"false"`, making the filter state visible to assistive technology without any extra ARIA role.
+
+## Severity Levels
+
+Every alert carries one of two severity values that control its visual appearance:
+
+<Tabs>
+  <Tab title="warning">
+    Displayed with an amber icon circle (`.ic-circle.warn`) and the class `alert-card warning`. Used for disruptions that affect service or require the rider to take action — for example, significant delays or route deviations.
+
+    ```json
+    {
+      "id": "a1",
+      "severity": "warning",
+      "lines": ["A"],
+      "stops": [],
+      "minsAgo": 38,
+      "title": "Weekend work on A Line",
+      "body": "Expect delays between Union Station and Downtown Lego City while track work is finished."
+    }
+    ```
+  </Tab>
+  <Tab title="info">
+    Displayed with a neutral icon circle and the class `alert-card info`. Used for lower-priority notices where service continues but conditions differ — for example, a bus detour or an out-of-service elevator.
+
+    ```json
+    {
+      "id": "a2",
+      "severity": "info",
+      "lines": ["38"],
+      "stops": [],
+      "minsAgo": 140,
+      "title": "Route 38 detour near Oak Park",
+      "body": "Buses use Market Street while a water main is repaired. Allow a few extra minutes."
+    }
+    ```
+  </Tab>
+</Tabs>
+
+## Alert Data Shape
+
+Each alert object in the `ALERTS` array (and returned by `allAlerts()`) conforms to the following structure:
+
+<ParamField path="id" type="string" required>
+  Unique identifier for the alert (e.g. `"a1"`, `"a2"`, `"a3"`).
+</ParamField>
+
+<ParamField path="severity" type="'warning' | 'info'" required>
+  Visual and semantic severity level. `'warning'` renders the amber icon; `'info'` renders the neutral icon.
+</ParamField>
+
+<ParamField path="lines" type="string[]" required>
+  Line IDs affected by this alert (e.g. `["A"]`, `["38"]`). Empty array `[]` means the alert affects a stop rather than a line — shown under the **Stops & stations** filter chip.
+</ParamField>
+
+<ParamField path="stops" type="string[]" required>
+  Stop IDs specifically called out in this alert (e.g. `["stadium"]`). Can be non-empty even when `lines` is non-empty.
+</ParamField>
+
+<ParamField path="minsAgo" type="number" required>
+  How many minutes ago the alert was posted, used by `agoText()` to display a human-readable relative timestamp such as "38 min ago" or "2 hr ago".
+</ParamField>
+
+<ParamField path="title" type="string" required>
+  Short display headline shown as the card's `<h2>`.
+</ParamField>
+
+<ParamField path="body" type="string" required>
+  Full detail text rendered below the title. Plain text; no markup.
+</ParamField>
+
+## Service Functions
+
+Three exported functions in `js/trip-service.js` expose the alert data to views and other modules:
+
+### `allAlerts()`
+
+Returns a shallow copy of the full `ALERTS` array. Every alert in the system, regardless of line or stop.
+
+```js title="js/trip-service.js"
+export const allAlerts = () => ALERTS.slice();
+```
+
+### `alertsForLine(lineId)`
+
+Filters the alert list to only those alerts whose `lines[]` array contains the given line ID. Used to show per-line alert counts in the Transit view.
+
+```js title="js/trip-service.js"
+export function alertsForLine(lineId) {
+  return ALERTS.filter(a => a.lines.includes(lineId));
+}
+```
+
+### `alertsForTrip(trip)`
+
+Filters alerts to only those relevant to a specific trip object. An alert is included if any of its lines appears in the trip's `lineIds`, or if any of its stops appears in the set of stop IDs visited by the trip's steps. Used on the Itinerary screen to surface in-context warnings.
+
+```js title="js/trip-service.js"
+export function alertsForTrip(trip) {
+  const stops = new Set(
+    trip.steps.flatMap(s => [s.stopId, ...(s.stopIds || [])]).filter(Boolean)
+  );
+  return ALERTS.filter(a =>
+    a.lines.some(l => trip.lineIds.includes(l)) ||
+    a.stops.some(s => stops.has(s))
+  );
+}
+```
+
+## Sample Alerts in the Demo Network
+
+The three alerts shipped in `demo-data.js` cover the main alert types you will see in the interface:
+
+<CardGroup cols={1}>
+  <Card title="a1 — Weekend work on A Line" icon="triangle-alert">
+    **Severity:** `warning` · **Line:** A Line · **Posted:** 38 min ago
+
+    Expect delays between Union Station and Downtown Lego City while track work is finished.
+  </Card>
+  <Card title="a2 — Route 38 detour near Oak Park" icon="info">
+    **Severity:** `info` · **Line:** Route 38 · **Posted:** 2 hr 20 min ago
+
+    Buses use Market Street while a water main is repaired. Allow a few extra minutes.
+  </Card>
+  <Card title="a3 — Elevator maintenance at Stadium" icon="info">
+    **Severity:** `info` · **Stop:** Stadium · **Posted:** 25 hr ago
+
+    The street-level elevator is out of service. Use the escalators or the Gate C entrance. This alert has no `lines` entry, so it appears under the **Stops & stations** filter chip only.
+  </Card>
+</CardGroup>
+
+<Note>
+  All alerts shown in the app are demonstration samples from `demo-data.js`. They do not reflect real City Metro service conditions. Replace the `ALERTS` export in `demo-data.js` (and the data source in `trip-service.js`) with live alert data when connecting to a real feed.
+</Note>

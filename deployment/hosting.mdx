@@ -1,0 +1,110 @@
+---
+title: "Deploy City Metro Trip-Planner on Any Static Host"
+sidebarTitle: "Hosting"
+description: "Serve the app's static files on any host with HTTPS, register callback.html as your OAuth redirect URI, and rely on hash-based routing with no server rewrites needed."
+---
+
+City Metro Trip-Planner is a pure static web application. The entire deployable artifact is a flat folder of files — `index.html`, `callback.html`, `css/app.css`, the `js/` module tree, and the `img/` assets. There is no server-side runtime, no build step, and no package manager to run. Copy the folder to any host that can serve static files over HTTPS and the app is live.
+
+## How routing works
+
+The SPA uses **hash-based routing** (`#/`, `#/results`, `#/alerts`, `#/map`, `#/account`). Because the fragment is never sent to the server, every deep link resolves to `index.html` without any URL-rewrite or `_redirects` configuration. This is what makes the app portable to every static host including GitHub Pages, plain Nginx, and object-storage buckets.
+
+<Note>
+  `callback.html` **must be served from the same origin** as `index.html` (identical scheme, host, and port). The OAuth flow posts the authorization code to `callback.html`, and `callback.html` in turn uses `postMessage` to hand the result back to the opener in `index.html`. A cross-origin mismatch will silently fail.
+</Note>
+
+## HTTPS requirement
+
+<Warning>
+  **Always serve the app over HTTPS in production.** OAuth 2.0 providers refuse to redirect to plain `http://` redirect URIs. Browsers also restrict access to `sessionStorage` — where PKCE verifiers are stored during the sign-in flow — when loaded via `file://`. Always use a local HTTP server during development rather than opening `index.html` directly from disk.
+</Warning>
+
+The two HTTPS-related consequences for deployment are:
+
+1. **OAuth redirect URI** — the `AUTH.redirectUri` value you register in `js/config.js` (and in the Authentik application) must start with `https://` in production.
+2. **`sessionStorage` persistence** — the PKCE `code_verifier` is written to `sessionStorage` before the redirect and read back on return. Opening the file via `file://` creates a fresh opaque origin on every navigation and loses the verifier.
+
+## Deployment options
+
+<CardGroup cols={2}>
+  <Card title="GitHub Pages" icon="github">
+    Push the project to a `gh-pages` branch or set the Pages source to your docs folder. Your callback URL will be `https://<user>.github.io/<repo>/callback.html`. Set `AUTH.redirectUri` to that exact URL and register it in the Authentik application.
+
+    ```js title="js/config.js"
+    redirectUri: 'https://acme-transit.github.io/trip-planner/callback.html',
+    ```
+  </Card>
+
+  <Card title="Netlify / Vercel" icon="cloud">
+    Drag-and-drop the folder in the Netlify UI, or connect the repository and point Vercel at the repo root. Leave **Build Command** blank and **Output Directory** as `/` (or the subfolder you deploy). The platform assigns an `https://` domain automatically.
+  </Card>
+
+  <Card title="Nginx / Apache" icon="server">
+    Copy the folder to the document root (or a virtual host directory) and serve it as a static site. No `try_files` or `RewriteRule` directives are needed because every client-side route is behind the hash. A minimal Nginx block:
+
+    ```nginx title="nginx.conf (excerpt)"
+    server {
+      listen 443 ssl;
+      server_name trip.citymetro.example;
+      root /var/www/trip-planner;
+      index index.html;
+    }
+    ```
+  </Card>
+
+  <Card title="Local development" icon="terminal">
+    Never open `index.html` via `file://`. Instead, start a local HTTP server in the project folder:
+
+    ```bash
+    # Node (no install needed on Node ≥ 18)
+    npx serve .
+
+    # Python (stdlib, no install)
+    python3 -m http.server 8080
+    ```
+
+    Then register `http://localhost:8080/callback.html` as a permitted redirect URI in your Authentik application for development.
+  </Card>
+</CardGroup>
+
+## Environment-specific redirect URIs
+
+`AUTH.redirectUri` in `js/config.js` can be left as an empty string — the app then derives it from `window.location.origin` at runtime, pointing to `<origin>/callback.html`. Set it explicitly only when you need to pin the URI (GitHub Pages sub-path, multi-environment deploys, etc.).
+
+```js title="js/config.js — localhost vs. production"
+// Development: leave blank to auto-derive, or pin to localhost
+redirectUri: 'http://localhost:8080/callback.html',
+
+// Staging
+redirectUri: 'https://trip-staging.citymetro.example/callback.html',
+
+// Production
+redirectUri: 'https://trip.citymetro.example/callback.html',
+```
+
+Register **every** URI you use in the Authentik application's **Redirect URIs** list. Authentik performs an exact-match check; an unregistered URI will cause the authorization flow to fail with an `invalid_redirect_uri` error.
+
+## Checklist before going live
+
+<Steps>
+  <Step title="Confirm HTTPS">
+    Verify the production host terminates TLS and issues a valid certificate. Most platforms (Netlify, Vercel, GitHub Pages) do this automatically.
+  </Step>
+  <Step title="Set AUTH.redirectUri">
+    Update `js/config.js` with the exact production URL of `callback.html`, then register that same URL as a Redirect URI in the Authentik application.
+  </Step>
+  <Step title="Set AUTH.issuer and AUTH.clientId">
+    Fill in the OpenID Connect issuer (`https://auth.citymetro.xyz/application/o/<APPLICATION_SLUG>/`) and the public Client ID from the Authentik application settings.
+  </Step>
+  <Step title="Populate LINKS">
+    Set `LINKS.website`, `LINKS.transitPolice`, `LINKS.support`, and optionally `LINKS.accountSettings` in `js/config.js`. Menu items for any empty string are shown as unavailable.
+  </Step>
+  <Step title="Smoke-test sign-in">
+    Open the app, tap **Sign In**, complete the Authentik flow, and confirm you land back on the `#/account` view with your display name shown.
+  </Step>
+</Steps>
+
+<Tip>
+  If you are deploying to a sub-path (for example `https://example.org/transit/`), make sure all asset references in `index.html` and `callback.html` use paths relative to the HTML file (they already do — `css/app.css`, `js/app.js`, `img/logo.png`). No base-href change is needed.
+</Tip>

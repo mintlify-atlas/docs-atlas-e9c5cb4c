@@ -1,0 +1,184 @@
+---
+title: "How City Metro Trip-Planner Authenticates Riders"
+sidebarTitle: "Overview"
+description: "PKCE Authorization Code flow, OIDC discovery, a public client, tab-scoped sessionStorage tokens, and OAuthError codes — the full Trip-Planner auth model."
+---
+
+City Metro Trip-Planner signs riders in using the **OAuth 2.0 Authorization Code flow with PKCE (Proof Key for Code Exchange, S256)**. The app is a fully public client: there is no client secret anywhere in the codebase, and sign-in is impossible until a real provider is configured. Provider endpoints are never hard-coded — they are resolved at runtime by fetching the OpenID Connect discovery document from `<issuer>/.well-known/openid-configuration`. All tokens are stored in `sessionStorage`, which is tab-scoped and automatically cleared when the rider closes the browser tab.
+
+## The Auth Model
+
+<CardGroup cols={2}>
+  <Card title="Public Client" icon="lock-open">
+    No client secret is ever used or stored. Authentication relies entirely on the PKCE code verifier/challenge pair, which is generated fresh for every sign-in attempt.
+  </Card>
+  <Card title="PKCE (S256)" icon="shield-check">
+    A cryptographic `code_verifier` (48 random bytes) and its SHA-256 `code_challenge` are generated using the Web Crypto API. The challenge is sent to the provider; the verifier is held in `sessionStorage` for the duration of the flow.
+  </Card>
+  <Card title="OIDC Discovery" icon="magnifying-glass">
+    The app fetches `<issuer>/.well-known/openid-configuration` to resolve the `authorization_endpoint`, `token_endpoint`, `end_session_endpoint`, and `userinfo_endpoint`. Results are cached in memory for the lifetime of the page.
+  </Card>
+  <Card title="Tab-Scoped Tokens" icon="browser">
+    Sessions are written to `sessionStorage`, never `localStorage`. The session ends automatically when the tab is closed — there is no persistent login across browser sessions.
+  </Card>
+</CardGroup>
+
+<Note>
+  This app is a **public** OAuth 2.0 client. Never add a `clientSecret` field to `js/config.js`. The PKCE challenge is the only proof of origin, and it is valid precisely because there is no secret that could be leaked from a static file.
+</Note>
+
+---
+
+## Full Sign-In Flow
+
+The sign-in sequence involves two separate navigations: one to the provider and one back to the app. The following steps trace execution from the moment the rider taps **Continue with City Metro** to the moment they land on their account page.
+
+<Steps>
+  <Step title="App calls beginLogin() — builds the authorization URL">
+    `beginLogin(returnTo)` in `js/oauth.js` first calls `missingConfig()`. If `AUTH.issuer` or `AUTH.clientId` is empty, it throws `OAuthError('not_configured')` and the flow stops.
+
+    Otherwise it calls `discover()` to fetch the OIDC metadata, then generates three random values:
+
+    | Value | Length | Purpose |
+    |-------|--------|---------|
+    | `verifier` | 48 bytes (base64url) | PKCE code verifier, never leaves the browser |
+    | `state` | 24 bytes (base64url) | CSRF protection — matched on return |
+    | `nonce` | 16 bytes (base64url) | Replay protection — matched in the ID token |
+
+    These three values, along with `returnTo` and the current timestamp (`at`), are saved to `sessionStorage` under the key `cm_tp_oauth`. The function then constructs and returns the full authorization URL.
+
+    ```js title="js/oauth.js — beginLogin (core parameters)"
+    const params = {
+      response_type: 'code',
+      client_id:     env.config.clientId,
+      redirect_uri:  redirectUri(env),       // <origin>/callback.html by default
+      scope:         env.config.scopes,      // 'openid profile email'
+      state,
+      nonce,
+      code_challenge:        await pkceChallenge(verifier),
+      code_challenge_method: 'S256'
+    };
+    ```
+  </Step>
+
+  <Step title="Browser navigates to the provider's authorization_endpoint">
+    `startLogin()` calls `location.assign(url)`, sending the rider to the City Metro sign-in service (Authentik at `auth.citymetro.xyz`). The app is now dormant — the rider authenticates entirely on the provider's domain.
+  </Step>
+
+  <Step title="Provider redirects back to callback.html with code and state">
+    After a successful authentication, the provider appends `?code=<value>&state=<value>` to the registered redirect URI and sends the browser back to `callback.html`. This page displays a spinner with the text **"Finishing sign-in…"** while `js/callback.js` runs.
+
+    If the provider returns `error=access_denied`, the callback page translates that into an `OAuthError('cancelled')` and routes the rider back to the sign-in screen with a notice.
+  </Step>
+
+  <Step title="callback.js calls completeLogin() — code exchange at token_endpoint">
+    `completeLogin(location.search)` in `js/oauth.js`:
+
+    1. Reads and **immediately removes** the `cm_tp_oauth` flow record (single-use).
+    2. Validates that the returned `state` matches the stored `state`.
+    3. Checks that the flow was started within the last **10 minutes** (flow expiry).
+    4. POSTs to the `token_endpoint` with `grant_type=authorization_code`, `code`, `redirect_uri`, `client_id`, and the original `code_verifier`.
+
+    ```js title="js/oauth.js — token request body"
+    new URLSearchParams({
+      grant_type:    'authorization_code',
+      code,
+      redirect_uri:  redirectUri(env),
+      client_id:     env.config.clientId,
+      code_verifier: flow.verifier
+    })
+    ```
+  </Step>
+
+  <Step title="ID token claims are validated">
+    The token response must include `access_token` and `id_token`. The ID token is Base64url-decoded (no signature verification — see note below) and the following claims are checked:
+
+    | Claim | Requirement |
+    |-------|------------|
+    | `iss` | Must match `meta.issuer` (trailing slashes normalized) |
+    | `aud` | Must include `AUTH.clientId` |
+    | `exp` | Must be in the future (with 60-second clock skew tolerance) |
+    | `nonce` | Must match the stored `nonce` |
+    | `sub` | Must be present (non-empty) |
+
+    If the `userinfo_endpoint` is available, profile claims (`name`, `email`, `preferred_username`) are merged from it, with `sub` cross-checked for consistency.
+
+    <Info>
+      Token signature verification is intentionally skipped. The ID token arrives directly from the `token_endpoint` over TLS — a channel the app already trusts — so signature verification is not required per [OIDC Core §3.1.3.7](https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation).
+    </Info>
+  </Step>
+
+  <Step title="Session written to sessionStorage (key: cm_tp_session)">
+    A `session` object is constructed and stored under the key `cm_tp_session`:
+
+    ```js title="Session object structure"
+    {
+      user: {
+        sub:      "...",   // stable subject identifier from the provider
+        name:     "...",   // display name (falls back to username or email local-part)
+        email:    "...",
+        username: "..."    // preferred_username from OIDC claims
+      },
+      idToken:     "...", // raw JWT — used as id_token_hint for global sign-out
+      accessToken: "...", // Bearer token for API calls
+      expiresAt:   1234567890123  // ms since epoch; derived from expires_in or id.exp
+    }
+    ```
+
+    `expiresAt` is set to `Date.now() + (tok.expires_in * 1000)`. If `expires_in` is absent, it falls back to `Math.max(0, id.exp * 1000 - Date.now())`.
+  </Step>
+
+  <Step title="Browser redirects to the returnTo hash route">
+    `callback.js` calls `history.replaceState` to scrub the `?code=&state=` query string from the address bar, then navigates to `returnTo` (e.g. `#/account`). The `returnTo` value was stored in the flow record during step 1, and `safeReturn()` ensures it is always an in-app hash route — preventing open redirects.
+  </Step>
+</Steps>
+
+---
+
+## sessionStorage Keys
+
+Three keys are used across the auth module, all prefixed `cm_tp_`:
+
+<ResponseField name="cm_tp_oauth" type="JSON string">
+  Holds the in-flight PKCE flow record: `{ state, verifier, nonce, returnTo, at }`. Written by `beginLogin()`, consumed and deleted by `completeLogin()`. Single-use.
+</ResponseField>
+
+<ResponseField name="cm_tp_session" type="JSON string">
+  The active session object (see structure above). Written by `completeLogin()`, read by `getSession()`, and removed by `signOut()` or on expiry.
+</ResponseField>
+
+<ResponseField name="cm_tp_notice" type="JSON string">
+  A one-time cross-navigation message for the sign-in screen: `{ code, message }`. Written by `setNotice()`, consumed and deleted by `takeNotice()`. Used to surface errors such as `session_expired` or `cancelled` after a redirect.
+</ResponseField>
+
+---
+
+## The OAuthError Class
+
+All auth failures are surfaced as `OAuthError` instances. Each error carries a machine-readable `code` and a human-readable `message` suitable for display to the rider.
+
+```js title="js/oauth.js — OAuthError"
+export class OAuthError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = 'OAuthError';
+    this.code = code;
+  }
+}
+```
+
+<Accordion title="Error codes reference">
+
+| Code | Thrown by | Meaning |
+|------|-----------|---------|
+| `not_configured` | `beginLogin()` | `AUTH.issuer` or `AUTH.clientId` is missing — sign-in is disabled |
+| `discovery_failed` | `discover()` | The OIDC metadata endpoint was unreachable or returned unexpected data |
+| `cancelled` | `completeLogin()` | The provider returned `error=access_denied` — the rider cancelled sign-in |
+| `state_mismatch` | `completeLogin()` | The `state` parameter returned by the provider does not match the stored value |
+| `flow_expired` | `completeLogin()` | More than 10 minutes elapsed between starting and completing sign-in |
+| `token_failed` | `completeLogin()` | The token endpoint was unreachable or rejected the code exchange |
+| `id_token_invalid` | `completeLogin()` | ID token claim validation failed (`iss`, `aud`, `exp`, `nonce`, or `sub`) |
+| `provider_error` | `completeLogin()` | The provider returned a non-`access_denied` error code |
+| `no_flow` | `completeLogin()` | No flow record was found in `sessionStorage` — link was already used or expired |
+
+</Accordion>

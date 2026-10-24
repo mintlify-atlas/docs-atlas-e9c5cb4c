@@ -1,0 +1,151 @@
+---
+title: "Transit Map: Interactive Schematic Line Viewer"
+sidebarTitle: "Transit Map"
+description: "Explore the schematic SVG network at /map, toggle line visibility, and tap stops to see their serving lines and hub interchange status in the demo dataset."
+---
+
+The Transit Map at `/map` renders a schematic diagram of the City Metro demonstration network directly in the browser as an SVG — no tile server, no external map library. Each stop is placed at an exact `(x, y)` coordinate read from `STOPS` in `demo-data.js`, and each line is drawn as a coloured path connecting its ordered stops. A legend of line-toggle buttons lets riders dim individual lines to focus on the routes they care about, while tapping any stop node opens a detail panel listing every line that serves it.
+
+## The `/map` Route
+
+The router registers `/map` and delegates to `renderMap(main)` from the map view module. The function builds the SVG canvas, draws all lines and stops, wires up the toggle legend, and attaches stop-tap handlers — all without a build step or external dependency.
+
+From `js/app.js`:
+
+```js title="js/app.js"
+const VIEWS = {
+  // …
+  '/map': [renderMap, 'Map'],
+  // …
+};
+```
+
+## Stop Coordinates
+
+Every stop carries integer `x` and `y` values that place it on the schematic canvas. These are not geographic coordinates — they are layout positions chosen to make the schematic readable on a mobile screen.
+
+```js title="js/demo-data.js"
+export const STOPS = [
+  { id: 'santa',      name: 'Santa Mooica',                 x: 60,  y: 120 },
+  { id: 'asian',      name: 'Asian Town',                   x: 170, y: 110 },
+  { id: 'union',      name: 'Union Station',                x: 290, y: 150, hub: true },
+  { id: 'downtown',   name: 'Downtown Lego City',           x: 420, y: 150, hub: true },
+  { id: 'emerg',      name: 'Emergency HQ',                 x: 540, y: 190 },
+  { id: 'wwestern',   name: 'William/Western',              x: 650, y: 220 },
+  { id: 'museum',     name: 'Museum',                       x: 290, y: 50  },
+  { id: 'stadium',    name: 'Stadium',                      x: 290, y: 260 },
+  { id: 'deathstar',  name: 'Death Star City',              x: 300, y: 370, hub: true },
+  { id: 'airport',    name: 'Airport Metro Transit Center', x: 440, y: 410, hub: true },
+  { id: 'flx',        name: 'FLX T2',                       x: 480, y: 280 },
+  { id: 'desktop',    name: 'Desktop Hills',                x: 570, y: 440 },
+  { id: 'tablec',     name: 'Table Central',                x: 680, y: 410 },
+  { id: 'nhollywood', name: 'North Hollowwood',             x: 735, y: 330 },
+  { id: 'market',     name: 'Market Street',                x: 235, y: 215 },
+  { id: 'oakpark',    name: 'Oak Park',                     x: 185, y: 310 },
+  { id: 'lakeview',   name: 'Lakeview',                     x: 120, y: 430 },
+  { id: 'couch',      name: 'Couch Chair Park',             x: 255, y: 395 },
+  { id: 'dine',       name: 'Dine Park',                    x: 215, y: 350 },
+  { id: 'harbor',     name: 'Harbor Annex',                 x: 700, y: 90,  noService: true }
+];
+```
+
+<Note>
+  Harbor Annex (`harbor`) has `noService: true`. It appears on the map canvas but no line serves it, previewing the "no results" state in trip planning.
+</Note>
+
+## The Five Demo Lines
+
+The map draws five lines sourced from the `LINES` export in `demo-data.js`. Each line carries a `color` (used for its path stroke and legend badge), a `type` (rail or bus), and an ordered `stops` array that determines the path drawn on the canvas.
+
+```js title="js/demo-data.js"
+export const LINES = [
+  {
+    id: 'A',   name: 'A Line',    type: 'rail', color: '#0b6fba', textColor: '#ffffff',
+    headway: 10, offset: 3, hop: 3,
+    stops: ['santa', 'asian', 'union', 'downtown', 'emerg', 'wwestern']
+  },
+  {
+    id: 'B',   name: 'B Line',    type: 'rail', color: '#d6181f', textColor: '#ffffff',
+    headway: 12, offset: 7, hop: 3,
+    stops: ['museum', 'union', 'stadium', 'deathstar', 'airport']
+  },
+  {
+    id: 'E',   name: 'E Line',    type: 'rail', color: '#f1ae1b', textColor: '#111111',
+    headway: 15, offset: 1, hop: 4,
+    stops: ['downtown', 'flx', 'airport', 'desktop', 'tablec', 'nhollywood']
+  },
+  {
+    id: '111', name: 'Route 111', type: 'bus',  color: '#e8590c', textColor: '#ffffff',
+    headway: 15, offset: 5, hop: 4,
+    stops: ['union', 'market', 'oakpark', 'lakeview']
+  },
+  {
+    id: '38',  name: 'Route 38',  type: 'bus',  color: '#7c3aed', textColor: '#ffffff',
+    headway: 20, offset: 9, hop: 4,
+    stops: ['deathstar', 'couch', 'dine', 'oakpark', 'lakeview']
+  }
+];
+```
+
+| Line | Type | Colour | Stops served |
+|------|------|--------|-------------|
+| A Line | Rail | Blue `#0b6fba` | Santa Mooica → Asian Town → Union Station → Downtown Lego City → Emergency HQ → William/Western |
+| B Line | Rail | Red `#d6181f` | Museum → Union Station → Stadium → Death Star City → Airport |
+| E Line | Rail | Yellow `#f1ae1b` | Downtown Lego City → FLX T2 → Airport → Desktop Hills → Table Central → North Hollowwood |
+| Route 111 | Bus | Orange `#e8590c` | Union Station → Market Street → Oak Park → Lakeview |
+| Route 38 | Bus | Purple `#7c3aed` | Death Star City → Couch Chair Park → Dine Park → Oak Park → Lakeview |
+
+## Hub Stops
+
+Stops with `hub: true` in the data are major interchange points. The map renders them with a larger node marker and the Trip Planner's `searchPlaces('')` (empty query) returns them as default suggestions.
+
+<CardGroup cols={2}>
+  <Card title="Union Station" icon="building">
+    Intersection of A Line and B Line, and the terminus for Route 111. Also the anchor stop for the **My Location** shortcut.
+  </Card>
+  <Card title="Downtown Lego City" icon="building">
+    Intersection of A Line and E Line. A short walk to Market Street (6 min) bridges to Routes 111 and 38.
+  </Card>
+  <Card title="Death Star City" icon="building">
+    Southern terminus of B Line and the northern terminus of Route 38. Connects rail to bus for southern destinations.
+  </Card>
+  <Card title="Airport Metro Transit Center" icon="plane">
+    Intersection of B Line and E Line. Serves Airport Terminal 1 (5 min walk) and Airport Terminal 2 (via FLX T2).
+  </Card>
+</CardGroup>
+
+## Line Toggle Legend
+
+The map includes a legend row of buttons, one per line, that let riders show or hide individual lines to reduce visual clutter.
+
+Each button carries an `aria-pressed` attribute. When `aria-pressed="true"` the line is visible; when `aria-pressed="false"` the line's SVG path group receives the `.dim` class, which reduces its opacity through a CSS transition. Pressing the button again removes `.dim` and restores full opacity.
+
+```js
+// Toggling a line button (simplified from the map view)
+btn.addEventListener('click', () => {
+  const pressed = btn.getAttribute('aria-pressed') === 'true';
+  btn.setAttribute('aria-pressed', String(!pressed));
+  lineGroup.classList.toggle('dim', !pressed);
+});
+```
+
+This approach keeps the toggle state machine entirely in the DOM — no separate JavaScript state variable is needed — and exposes the current state accessibly to screen readers.
+
+## Stop Detail Display
+
+Tapping a stop node on the map opens a detail panel beneath the canvas. The panel shows:
+
+- The stop name
+- Every line that serves this stop (retrieved via `linesAtStop(stopId)`)
+- Whether the stop is a hub interchange
+
+```js title="js/trip-service.js"
+export const linesAtStop = stopId =>
+  LINES.filter(l => l.stops.includes(stopId));
+```
+
+For hub stops the panel also shows connecting lines with their colour badges, giving riders at-a-glance transfer information without navigating away from the map.
+
+<Note>
+  The map is a generated SVG built from `STOPS` and `LINES` data at runtime. It is not a tile-based geographic map. Coordinates are schematic layout positions only and do not correspond to real-world geography.
+</Note>

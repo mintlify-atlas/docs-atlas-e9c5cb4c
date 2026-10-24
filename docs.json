@@ -1,72 +1,74 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mintlify Starter Kit",
+  "name": "City Metro Trip-Planner",
+  "theme": "almond",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#0a7c4a",
+    "light": "#003f8a",
+    "dark": "#ffffff"
   },
-  "favicon": "/favicon.svg",
-  "navigation": {
-    "pages": [
-      {
-        "group": "Getting Started",
-        "pages": [
-          "index",
-          "quickstart"
-        ]
-      }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
+  "favicon": "https://media.brand.dev/abf1185f-7b28-4d62-9f92-367a378da8d6.png",
   "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:support@mintlify.com"
-      }
-    ],
     "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://app.mintlify.com"
+      "type": "github",
+      "href": "https://github.com/City-Metro/mobileapp-v3"
     }
-  },
-  "contextual": {
-    "options": [
-      "copy",
-      "view",
-      "chatgpt",
-      "claude",
-      "perplexity",
-      "mcp",
-      "cursor",
-      "vscode"
-    ]
   },
   "footer": {
     "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
+      "github": "https://github.com/City-Metro/mobileapp-v3"
     }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["introduction", "quickstart", "configuration"]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/trip-planner",
+              "features/alerts",
+              "features/transit-map",
+              "features/account"
+            ]
+          },
+          {
+            "group": "Authentication",
+            "pages": ["auth/overview", "auth/setup", "auth/session-management"]
+          },
+          {
+            "group": "Deployment & Customization",
+            "pages": [
+              "deployment/hosting",
+              "deployment/theming",
+              "deployment/real-data"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "JavaScript Modules",
+            "pages": [
+              "reference/oauth",
+              "reference/trip-service",
+              "reference/config",
+              "reference/shell"
+            ]
+          },
+          {
+            "group": "Data Structures",
+            "pages": ["reference/data-types", "reference/demo-data"]
+          }
+        ]
+      }
+    ]
   }
 }

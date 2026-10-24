@@ -1,0 +1,350 @@
+---
+title: "Data Types: Place, Trip, Step, Line, Stop, and Alert"
+sidebarTitle: "Data Types"
+description: "Complete reference for every object shape used across the City Metro Trip-Planner: Place, Stop, Line, Trip, Step, Alert, Session, and FindTripsQuery."
+---
+
+The City Metro Trip-Planner passes a small set of well-defined object shapes between its modules. Understanding these types is the starting point for extending the app, writing tests, or swapping out `trip-service.js` for a live backend. Every shape below is derived directly from the source in `js/trip-service.js`, `js/demo-data.js`, and `js/oauth.js` — no fields are invented.
+
+---
+
+## Place
+
+A **Place** is anything a rider can select as a trip origin or destination. The three kinds are `stop` (a station or bus stop that already has a transit presence), `landmark` (a named point of interest near a stop), and `location` (a dynamic position such as "My location"). `trip-service.js` constructs `Place` objects from `STOPS` and `LANDMARKS` at startup.
+
+<ResponseField name="id" type="string" required>
+  Unique identifier. For stops this matches the stop `id`; for landmarks it comes from `LANDMARKS`; for the built-in "My location" placeholder it is the literal string `my-location`.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Human-readable display name shown in search results and the trip summary.
+</ResponseField>
+
+<ResponseField name="kind" type="'stop' | 'landmark' | 'location'" required>
+  Discriminator that indicates whether the place is a transit stop, a named landmark, or a device-position placeholder.
+</ResponseField>
+
+<ResponseField name="stopId" type="string" required>
+  The `id` of the nearest `Stop`. For `kind: 'stop'` this is identical to `id`. For landmarks and locations it points to the stop the router will use to plan the trip.
+</ResponseField>
+
+<ResponseField name="walkMin" type="number" required>
+  Minutes of walking from this place to its associated stop. Always `0` for stops, positive for landmarks and locations.
+</ResponseField>
+
+---
+
+## Stop
+
+A **Stop** is a physical station or bus stop. Stops are the nodes of the transit graph — the router works entirely in stop-space. Their `x`/`y` coordinates place them on the schematic map canvas and have no geographic meaning.
+
+<ResponseField name="id" type="string" required>
+  Short lowercase slug uniquely identifying the stop, e.g. `union`, `airport`, `deathstar`.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Full display name, e.g. `Union Station`, `Airport Metro Transit Center`.
+</ResponseField>
+
+<ResponseField name="x" type="number" required>
+  Horizontal position on the schematic map canvas (pixels, arbitrary coordinate space).
+</ResponseField>
+
+<ResponseField name="y" type="number" required>
+  Vertical position on the schematic map canvas (pixels, arbitrary coordinate space).
+</ResponseField>
+
+<ResponseField name="hub" type="boolean">
+  When `true`, the stop is a major interchange. Hub stops are highlighted on the map and returned first by `searchPlaces` when the query is empty.
+</ResponseField>
+
+<ResponseField name="noService" type="boolean">
+  When `true`, the stop appears on the schematic map but the router will never route any trip through it, demonstrating the "no results" empty state.
+</ResponseField>
+
+---
+
+## Line
+
+A **Line** describes one transit route — either a rail line or a bus route. Every `Line` carries enough information for the demonstration timetable engine in `trip-service.js` to compute exact departure times without any external data.
+
+<ResponseField name="id" type="string" required>
+  Short identifier used throughout the app, e.g. `A`, `B`, `E`, `111`, `38`.
+</ResponseField>
+
+<ResponseField name="name" type="string" required>
+  Full route name displayed in badges and step cards, e.g. `A Line`, `Route 111`.
+</ResponseField>
+
+<ResponseField name="type" type="'rail' | 'bus'" required>
+  Determines the icon and badge styling applied by the shell.
+</ResponseField>
+
+<ResponseField name="color" type="string" required>
+  CSS color value (hex) for the line badge background and map stroke, e.g. `#0b6fba`.
+</ResponseField>
+
+<ResponseField name="textColor" type="string" required>
+  CSS color value for the badge label, chosen to contrast with `color`, e.g. `#ffffff` or `#111111`.
+</ResponseField>
+
+<ResponseField name="headway" type="number" required>
+  Frequency of service in minutes — how long a rider waits on average between vehicles.
+</ResponseField>
+
+<ResponseField name="offset" type="number" required>
+  Minutes past the hour at which the first departure of each cycle leaves the first stop. Used by `nextDeparture()` inside `trip-service.js` to compute exact wait times.
+</ResponseField>
+
+<ResponseField name="hop" type="number" required>
+  Travel time in minutes between each consecutive pair of stops on this line.
+</ResponseField>
+
+<ResponseField name="stops" type="string[]" required>
+  Ordered array of stop IDs defining the full route, from first terminal to last. The router traverses this array in both directions to support reverse travel.
+</ResponseField>
+
+---
+
+## Trip
+
+A **Trip** is a complete, time-resolved itinerary from an origin to a destination. `findTrips()` returns an array of up to four `Trip` objects, each tagged with labels like `Fastest` or `Fewest transfers`. Trips are ephemeral — they are computed on demand and never persisted.
+
+<ResponseField name="id" type="number" required>
+  Zero-based index assigned by the `tag()` function after `findTrips` ranks results. Used as the React-style key for the results list.
+</ResponseField>
+
+<ResponseField name="depart" type="number" required>
+  Epoch milliseconds when the traveller leaves the origin (after any initial walk).
+</ResponseField>
+
+<ResponseField name="arrive" type="number" required>
+  Epoch milliseconds when the traveller reaches the destination (after any final walk).
+</ResponseField>
+
+<ResponseField name="duration" type="number" required>
+  Total journey time in minutes from `depart` to `arrive`.
+</ResponseField>
+
+<ResponseField name="transfers" type="number" required>
+  Number of times the rider changes between transit vehicles. `rides - 1`, minimum `0`.
+</ResponseField>
+
+<ResponseField name="rides" type="number" required>
+  Total number of distinct transit legs (board events) in the itinerary.
+</ResponseField>
+
+<ResponseField name="walkMin" type="number" required>
+  Cumulative walking time in minutes across all walk steps, including the first-mile and last-mile walks.
+</ResponseField>
+
+<ResponseField name="steps" type="Step[]" required>
+  Ordered sequence of `Step` objects that fully describes every action in the journey. See the **Step** section below.
+</ResponseField>
+
+<ResponseField name="chain" type="ChainLink[]" required>
+  Compact summary of the trip used to render the results card without re-iterating `steps`. Each element is either `{ kind: 'ride', lineId: string }` or `{ kind: 'walk', min: number }`.
+</ResponseField>
+
+<ResponseField name="lineIds" type="string[]" required>
+  Deduplicated array of line IDs used in this trip, in order of first appearance. Used by `alertsForTrip()` to fetch relevant service alerts.
+</ResponseField>
+
+<ResponseField name="boardingStop" type="string" required>
+  Display name of the stop where the rider first boards a transit vehicle.
+</ResponseField>
+
+<ResponseField name="alightStop" type="string" required>
+  Display name of the stop where the rider last alights from a transit vehicle.
+</ResponseField>
+
+<ResponseField name="tags" type="string[]" required>
+  Labels assigned by `tag()`. Possible values are `Fastest`, `Fewest transfers`, and `Least walking`. An empty array means no label applies (e.g. when only one result is returned).
+</ResponseField>
+
+---
+
+## Step
+
+A **Step** is one discrete action inside a `Trip.steps` array. Every step has a `type` discriminator and shares `title`, `detail`, `start`, and `end` fields. Additional fields depend on the type. The types below are exhaustive — no other values are produced by `trip-service.js`.
+
+<Tabs>
+  <Tab title="walk / walk-final">
+    `walk` is used for the initial walk from the origin to a stop. `walk-final` is used for the last-mile walk from the final stop to the destination. Both carry identical fields.
+
+    <ResponseField name="type" type="'walk' | 'walk-final'" required>
+      Discriminator. `walk` for first-mile; `walk-final` for last-mile.
+    </ResponseField>
+    <ResponseField name="title" type="string" required>
+      e.g. `Walk to Union Station` or `Walk to Lego City Hall`.
+    </ResponseField>
+    <ResponseField name="detail" type="string" required>
+      e.g. `From My location` or `From Airport Metro Transit Center`.
+    </ResponseField>
+    <ResponseField name="start" type="number" required>Epoch milliseconds when the walk begins.</ResponseField>
+    <ResponseField name="end" type="number" required>Epoch milliseconds when the walk ends.</ResponseField>
+    <ResponseField name="minutes" type="number" required>Duration of the walk in minutes.</ResponseField>
+    <ResponseField name="stopId" type="string" required>
+      For `walk`: the stop being walked *to*. For `walk-final`: the stop being walked *from*.
+    </ResponseField>
+  </Tab>
+
+  <Tab title="transfer">
+    A platform-level transfer between two transit lines at the same stop. The router inserts a fixed 2-minute transfer penalty (`TRANSFER_MIN = 2`) before each subsequent boarding.
+
+    <ResponseField name="type" type="'transfer'" required>Discriminator.</ResponseField>
+    <ResponseField name="lineId" type="string" required>ID of the *incoming* line being transferred to.</ResponseField>
+    <ResponseField name="title" type="string" required>e.g. `Transfer to B Line`.</ResponseField>
+    <ResponseField name="detail" type="string" required>e.g. `at Union Station`.</ResponseField>
+    <ResponseField name="start" type="number" required>Epoch milliseconds when the transfer begins.</ResponseField>
+    <ResponseField name="end" type="number" required>Epoch milliseconds when the transfer ends.</ResponseField>
+    <ResponseField name="minutes" type="number" required>Duration of the transfer (always `2` in the demo).</ResponseField>
+    <ResponseField name="stopId" type="string" required>ID of the stop where the transfer occurs.</ResponseField>
+  </Tab>
+
+  <Tab title="wait">
+    Time spent on the platform waiting for the next vehicle. Only generated when `nextDeparture` is in the future relative to arrival time at the stop.
+
+    <ResponseField name="type" type="'wait'" required>Discriminator.</ResponseField>
+    <ResponseField name="lineId" type="string" required>ID of the line being waited for.</ResponseField>
+    <ResponseField name="title" type="string" required>e.g. `Wait for A Line`.</ResponseField>
+    <ResponseField name="detail" type="string" required>e.g. `toward William/Western · every 10 min`.</ResponseField>
+    <ResponseField name="start" type="number" required>Epoch milliseconds when the wait begins.</ResponseField>
+    <ResponseField name="end" type="number" required>Epoch milliseconds when the vehicle arrives.</ResponseField>
+    <ResponseField name="minutes" type="number" required>Length of the wait in minutes.</ResponseField>
+    <ResponseField name="stopId" type="string" required>ID of the boarding stop.</ResponseField>
+  </Tab>
+
+  <Tab title="board">
+    The moment of boarding a vehicle. `start` and `end` are identical — this is a zero-duration event marking the transition from waiting to riding.
+
+    <ResponseField name="type" type="'board'" required>Discriminator.</ResponseField>
+    <ResponseField name="lineId" type="string" required>ID of the line being boarded.</ResponseField>
+    <ResponseField name="title" type="string" required>e.g. `Board A Line toward William/Western`.</ResponseField>
+    <ResponseField name="detail" type="string" required>The boarding stop name, e.g. `Union Station`.</ResponseField>
+    <ResponseField name="start" type="number" required>Epoch milliseconds of boarding (equals `end`).</ResponseField>
+    <ResponseField name="end" type="number" required>Epoch milliseconds of boarding (equals `start`).</ResponseField>
+    <ResponseField name="stopId" type="string" required>ID of the stop where boarding occurs.</ResponseField>
+  </Tab>
+
+  <Tab title="ride">
+    Travel on a transit vehicle between two stops. `stopIds` lists intermediate stops not explicitly boarded or alighted.
+
+    <ResponseField name="type" type="'ride'" required>Discriminator.</ResponseField>
+    <ResponseField name="lineId" type="string" required>ID of the line being ridden.</ResponseField>
+    <ResponseField name="title" type="string" required>e.g. `Ride 3 stops to Downtown Lego City`.</ResponseField>
+    <ResponseField name="detail" type="string" required>e.g. `A Line toward William/Western`.</ResponseField>
+    <ResponseField name="start" type="number" required>Epoch milliseconds of departure from the boarding stop.</ResponseField>
+    <ResponseField name="end" type="number" required>Epoch milliseconds of arrival at the alighting stop.</ResponseField>
+    <ResponseField name="minutes" type="number" required>Total ride time in minutes (`stopCount × line.hop`).</ResponseField>
+    <ResponseField name="stopCount" type="number" required>Number of stops traversed (not counting the boarding stop itself).</ResponseField>
+    <ResponseField name="stopIds" type="string[]" required>IDs of intermediate stops passed through without alighting.</ResponseField>
+    <ResponseField name="stopId" type="string" required>ID of the alighting stop at the end of this ride.</ResponseField>
+  </Tab>
+
+  <Tab title="arrive">
+    Terminal step when the destination is a stop and no final walk is required. `start` and `end` are identical.
+
+    <ResponseField name="type" type="'arrive'" required>Discriminator.</ResponseField>
+    <ResponseField name="title" type="string" required>e.g. `Arrive at Airport Metro Transit Center`.</ResponseField>
+    <ResponseField name="detail" type="string" required>Empty string — no additional detail is rendered.</ResponseField>
+    <ResponseField name="start" type="number" required>Epoch milliseconds of arrival (equals `end`).</ResponseField>
+    <ResponseField name="end" type="number" required>Epoch milliseconds of arrival (equals `start`).</ResponseField>
+    <ResponseField name="stopId" type="string" required>ID of the destination stop.</ResponseField>
+  </Tab>
+</Tabs>
+
+---
+
+## Alert
+
+An **Alert** represents an active service disruption or informational notice. `alertsForTrip()` in `trip-service.js` cross-references a trip's `lineIds` and all stop IDs in `steps` against `Alert.lines` and `Alert.stops` to surface only relevant notices.
+
+<ResponseField name="id" type="string" required>
+  Unique alert identifier, e.g. `a1`, `a2`.
+</ResponseField>
+
+<ResponseField name="severity" type="'warning' | 'info'" required>
+  `warning` for disruptions that affect service; `info` for advisories that do not cause delays.
+</ResponseField>
+
+<ResponseField name="lines" type="string[]" required>
+  Array of line IDs affected by this alert. May be empty if the alert is stop-specific.
+</ResponseField>
+
+<ResponseField name="stops" type="string[]" required>
+  Array of stop IDs affected by this alert. May be empty if the alert is line-specific.
+</ResponseField>
+
+<ResponseField name="minsAgo" type="number" required>
+  Minutes since the alert was published. Used only for display; not a live timestamp. Derived from the static demo data.
+</ResponseField>
+
+<ResponseField name="title" type="string" required>
+  Short headline shown in the alert banner, e.g. `Weekend work on A Line`.
+</ResponseField>
+
+<ResponseField name="body" type="string" required>
+  Full explanatory text shown in the expanded alert view.
+</ResponseField>
+
+---
+
+## Session
+
+A **Session** is created by `completeLogin()` in `js/oauth.js` after a successful OAuth 2.0 / PKCE exchange and stored in `sessionStorage` (tab-scoped, never `localStorage`). `getSession()` returns `null` if no session exists or if `expiresAt` is in the past.
+
+<ResponseField name="user" type="object" required>
+  <Expandable title="user fields">
+    <ResponseField name="sub" type="string" required>
+      Subject identifier from the ID token — the canonical, stable user ID at the provider.
+    </ResponseField>
+    <ResponseField name="name" type="string" required>
+      Display name resolved from `name`, then `preferred_username`, then the local part of `email`, then the fallback string `Rider`.
+    </ResponseField>
+    <ResponseField name="email" type="string" required>
+      User's email address from the ID token or userinfo endpoint. Empty string if not provided.
+    </ResponseField>
+    <ResponseField name="username" type="string" required>
+      `preferred_username` claim from the provider. Empty string if not provided.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="idToken" type="string" required>
+  Raw JWT ID token as returned by the token endpoint. Stored for use as `id_token_hint` during global sign-out.
+</ResponseField>
+
+<ResponseField name="accessToken" type="string" required>
+  Bearer token for calling the userinfo endpoint or any City Metro API. Never sent to the app's own origin.
+</ResponseField>
+
+<ResponseField name="expiresAt" type="number" required>
+  Epoch milliseconds at which the session expires. Computed from `expires_in` when present; otherwise from `id.exp`. `getSession()` clears the session and returns `null` when `Date.now() >= expiresAt`.
+</ResponseField>
+
+---
+
+## FindTripsQuery
+
+`FindTripsQuery` is the single argument to `findTrips()` exported by `trip-service.js`. All four fields are required — there are no optional parameters.
+
+<ResponseField name="originId" type="string" required>
+  The `id` of the origin `Place`. Must exist in the place registry (stops + landmarks + `my-location`).
+</ResponseField>
+
+<ResponseField name="destId" type="string" required>
+  The `id` of the destination `Place`. Must be different from `originId` for the router to attempt path-finding.
+</ResponseField>
+
+<ResponseField name="mode" type="'now' | 'depart' | 'arrive'" required>
+  Scheduling intent. `now` and `depart` find the next trip leaving at or after `whenMs`; `arrive` finds the latest trip that still arrives by `whenMs`.
+</ResponseField>
+
+<ResponseField name="whenMs" type="number" required>
+  Reference epoch milliseconds. For `mode: 'now'` pass `Date.now()`. For `depart` or `arrive` pass the time the user selected.
+</ResponseField>
+
+<Note>
+  When `mode` is `'arrive'`, `findTrips()` performs a binary search over possible departure times (up to 8 hours before `whenMs`) to find the latest departure that satisfies the arrival constraint.
+</Note>

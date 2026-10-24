@@ -1,0 +1,263 @@
+---
+title: "shell.js — App Frame, Navigation, and Drawer API"
+sidebarTitle: "shell.js"
+description: "API reference for shell.js: mountShell, updateShell, openDrawer, closeDrawer, notifyAuthChange, authOriginHost, navIdFor, and the NAV constant."
+---
+
+`shell.js` owns everything that wraps each screen: the compact header with logo, account chip, and hamburger button; the desktop top-navigation bar; the mobile bottom navigation bar; and the slide-in menu drawer. It also manages the accessibility focus trap inside the drawer and dispatches the `cm-auth` event that signals auth state changes to the rest of the app. Call `mountShell` once at startup, then call `updateShell` on every route change — that is the complete integration contract.
+
+---
+
+## `NAV` constant
+
+`NAV` is an ordered array of five navigation descriptors that drive both the desktop header nav and the mobile bottom nav bar. The order of items determines their left-to-right / left-to-right display order.
+
+```js
+export const NAV = [
+  { id: 'plan',    path: '/',        label: 'Plan',    icon: 'route' },
+  { id: 'transit', path: '/transit', label: 'Transit', icon: 'train' },
+  { id: 'map',     path: '/map',     label: 'Map',     icon: 'map'   },
+  { id: 'alerts',  path: '/alerts',  label: 'Alerts',  icon: 'bell'  },
+  { id: 'account', path: '/account', label: 'Account', icon: 'user'  },
+];
+```
+
+Each item has the following shape:
+
+<ResponseField name="id" type="string">
+  Unique identifier used by `updateShell` to set `is-active` and `aria-current`. Values: `'plan'`, `'transit'`, `'map'`, `'alerts'`, `'account'`.
+</ResponseField>
+
+<ResponseField name="path" type="string">
+  The hash-route path without the leading `#` (e.g. `'/alerts'`). Used as the `href` attribute on nav links.
+</ResponseField>
+
+<ResponseField name="label" type="string">
+  Human-readable nav label rendered below the icon.
+</ResponseField>
+
+<ResponseField name="icon" type="string">
+  Icon name passed to the `icon()` helper from `icons.js`. Values: `'route'`, `'train'`, `'map'`, `'bell'`, `'user'`.
+</ResponseField>
+
+---
+
+## `navIdFor(path)`
+
+Maps a URL pathname to the `id` of the nav item that should be highlighted. Handles routes that do not directly correspond to a top-level nav entry.
+
+<ParamField path="path" type="string" required>
+  A URL pathname such as `'/'`, `'/results'`, `'/trip'`, `'/signin'`, `'/account'`, or any value from `NAV[*].path`.
+</ParamField>
+
+Returns `string` — the nav `id` to activate.
+
+**Mapping rules:**
+
+| Path(s) | Active nav `id` |
+|---|---|
+| `'/'`, `'/results'`, `'/trip'` | `'plan'` |
+| `'/signin'`, `'/account'` | `'account'` |
+| Any other `NAV` path | That item's `id` |
+| Unrecognised path | `'plan'` (fallback) |
+
+```js
+import { navIdFor } from './js/shell.js';
+
+navIdFor('/results'); // → 'plan'
+navIdFor('/alerts');  // → 'alerts'
+navIdFor('/signin');  // → 'account'
+```
+
+---
+
+## `mountShell(root)`
+
+Injects the complete application chrome into `root` and attaches all event listeners. **Must be called exactly once** on app startup, before the router renders any view.
+
+<ParamField path="root" type="HTMLElement" required>
+  The container element into which the shell HTML is written. Typically `document.getElementById('app')` or equivalent.
+</ParamField>
+
+`mountShell` creates the following DOM structure inside `root`:
+
+<Steps>
+  <Step title="Skip link">
+    `<a class="skip" href="#main">Skip to content</a>` — keyboard-accessible skip navigation for screen-reader users.
+  </Step>
+  <Step title="Header (hdr element)">
+    Contains the brand link (logo + wordmark), the desktop nav (`hdr-nav`) built from `NAV`, the account chip (`hdrAccount`), and the hamburger button (`menuBtn`).
+  </Step>
+  <Step title="Main content area (main element)">
+    Empty on mount. The router writes each view's HTML into this element.
+  </Step>
+  <Step title="Bottom navigation (bnav element)">
+    Five icon-plus-label links built from `NAV`. Visible on mobile; hidden on wide viewports via CSS.
+  </Step>
+  <Step title="Scrim overlay (scrim element)">
+    Semi-transparent backdrop rendered behind the open drawer. Clicking it calls `closeDrawer()`.
+  </Step>
+  <Step title="Drawer (drawer aside element)">
+    Initially empty; filled by `renderDrawer()` on every `openDrawer()` call so it always reflects the current auth state.
+  </Step>
+</Steps>
+
+After building the DOM, `mountShell` binds these event listeners:
+
+- **Menu button** (`#menuBtn` click) → `openDrawer()`
+- **Scrim** click → `closeDrawer()`
+- **Drawer** click delegation → close button, unavailable-link toasts, sign-out, `[data-close]` links
+- **`keydown`** (document) → Escape closes drawer; Tab/Shift+Tab implements the focus trap
+- **`resize`** (window) → closes drawer without restoring focus when viewport width reaches 900 px or wider
+- **`cm-auth`** (window) → re-renders the account chip and the drawer contents
+
+```js
+import { mountShell } from './js/shell.js';
+
+const root = document.getElementById('app');
+mountShell(root);
+// now start the router
+```
+
+---
+
+## `updateShell(path)`
+
+Synchronises the shell's visual state with the current route. Call this on every navigation event — including the initial page load — after the view has been rendered.
+
+<ParamField path="path" type="string" required>
+  The current URL pathname (e.g. `'/results'`, `'/alerts'`).
+</ParamField>
+
+`updateShell` performs three actions:
+
+<Steps>
+  <Step title="Highlight active nav item">
+    Iterates every `[data-nav]` element in both the header nav and the bottom nav bar. Sets `class="is-active"` and `aria-current="page"` on the item whose `data-nav` attribute matches `navIdFor(path)`; removes both from all others.
+  </Step>
+  <Step title="Re-render account chip">
+    Reads the current session via `getSession()`. If signed in, renders the user's initials inside an avatar circle and points the link to `#/account`. If signed out, renders the user icon and points the link to `#/signin`.
+  </Step>
+  <Step title="Close the drawer">
+    Calls `closeDrawer({ restore: false })` to ensure the drawer is not left open during a programmatic navigation.
+  </Step>
+</Steps>
+
+```js
+import { updateShell } from './js/shell.js';
+
+// Inside the router's route-change handler:
+function navigate(path) {
+  renderView(path);
+  updateShell(path);
+}
+```
+
+---
+
+## `openDrawer()`
+
+Opens the slide-in menu drawer, renders fresh drawer content (reflecting the current auth state), and moves keyboard focus to the close button.
+
+Calling `openDrawer()` when the drawer is already open is a no-op in practice because the menu button is only reachable when the drawer is closed.
+
+<Steps>
+  <Step title="Store opener">
+    Records `document.activeElement` so focus can be returned when the drawer closes.
+  </Step>
+  <Step title="Re-render drawer content">
+    Calls `renderDrawer()` to produce up-to-date HTML — signed-in state, configured links, sign-out button.
+  </Step>
+  <Step title="Show drawer and scrim">
+    Removes the `inert` attribute from `#drawer`, adds the `open` CSS class, un-hides `#scrim`, sets `aria-expanded="true"` on `#menuBtn`, and adds `no-scroll` to `<body>`.
+  </Step>
+  <Step title="Focus close button">
+    Moves focus to `#closeBtn` so keyboard users can immediately dismiss or navigate the drawer.
+  </Step>
+</Steps>
+
+---
+
+## `closeDrawer(options?)`
+
+Closes the slide-in menu drawer and optionally returns focus to the element that opened it.
+
+<ParamField body="options.restore" type="boolean" default="true">
+  When `true` (the default), focus is returned to the element recorded by the last `openDrawer()` call. Pass `false` when closing programmatically after a navigation — for example after the user taps a drawer link — to avoid unexpectedly moving focus back to the hamburger button.
+</ParamField>
+
+`closeDrawer` is a no-op if the drawer is not currently open.
+
+```js
+import { closeDrawer } from './js/shell.js';
+
+// Close and restore focus (e.g. user pressed Escape):
+closeDrawer();
+
+// Close without restoring focus (e.g. after signing out and navigating away):
+closeDrawer({ restore: false });
+```
+
+#### Focus trap behaviour
+
+While the drawer is open, the `keydown` listener on `document` enforces a focus trap:
+
+- **Tab** — when focus is on the last focusable element inside the drawer, wraps to the first.
+- **Shift+Tab** — when focus is on the first focusable element, wraps to the last.
+- **Escape** — calls `closeDrawer()` with default options (focus restored).
+
+Focusable elements are all `<a href>` and enabled `<button>` elements inside `#drawer` that are currently visible (i.e. not hidden by `offsetParent === null`).
+
+---
+
+## `notifyAuthChange()`
+
+Dispatches a `cm-auth` event on `window` to signal that the authentication state has changed. The shell listens for this event and re-renders the account chip and drawer contents automatically.
+
+Call this after any operation that changes sign-in state — signing in, signing out, or a session expiry you detect in your own code.
+
+```js
+import { signOut } from './js/oauth.js';
+import { notifyAuthChange } from './js/shell.js';
+
+signOut();
+notifyAuthChange();
+// shell re-renders immediately: chip shows "Sign in", drawer shows sign-in button
+```
+
+<Tip>
+  `notifyAuthChange` is a pure event dispatch — it does not call `signOut` or `getSession` itself. Always update auth state first, then call `notifyAuthChange`.
+</Tip>
+
+---
+
+## `authOriginHost()`
+
+Returns the hostname portion of `AUTH.origin`. Used by sign-in UI to display a recognisable provider label to the user.
+
+Returns `string` — e.g. `'auth.citymetro.xyz'` for the default configuration.
+
+```js
+import { authOriginHost } from './js/shell.js';
+
+console.log(authOriginHost()); // 'auth.citymetro.xyz'
+```
+
+---
+
+## Drawer menu links
+
+The drawer renders links from the `LINKS` object in `config.js`. Each configured URL becomes a tappable `<a>` that opens in a new tab. Each unconfigured (empty) URL is rendered as a disabled `<button>` with `aria-disabled="true"`. Tapping a disabled item triggers a toast notification:
+
+> *"City Metro website hasn't been configured yet. Add its URL in js/config.js."*
+
+The drawer also renders a dynamic signed-in / signed-out section:
+
+<Tabs>
+  <Tab title="Signed out">
+    A full-width **Sign in** button (`<a class="btn primary block" href="#/signin">`) appears at the top of the drawer body.
+  </Tab>
+  <Tab title="Signed in">
+    An avatar circle showing the user's initials, their display name, and their email address appear at the top of the drawer body. A **Sign out** button appears below the account-settings link and calls `signOut()`, fires `notifyAuthChange()`, shows a toast, then navigates to `'/'`.
+  </Tab>
+</Tabs>

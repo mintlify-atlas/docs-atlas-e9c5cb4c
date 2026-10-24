@@ -1,0 +1,87 @@
+{
+  "projectType": "saas",
+  "projectName": "City Metro Trip-Planner",
+  "projectDescription": "A mobile-first single-page web app for planning rail and bus trips across the City Metro transit network, featuring real-time itineraries, service alerts, an interactive map, and OAuth 2.0 / OIDC sign-in with transit accounts.",
+  "theme": "almond",
+  "primaryColor": "#0a7c4a",
+  "lightColor": "#003f8a",
+  "darkColor": "#ffffff",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["introduction", "quickstart", "configuration"]
+          },
+          {
+            "group": "Core Features",
+            "pages": ["features/trip-planner", "features/alerts", "features/transit-map", "features/account"]
+          },
+          {
+            "group": "Authentication",
+            "pages": ["auth/overview", "auth/setup", "auth/session-management"]
+          },
+          {
+            "group": "Deployment & Customization",
+            "pages": ["deployment/hosting", "deployment/theming", "deployment/real-data"]
+          }
+        ]
+      },
+      {
+        "tab": "Reference",
+        "groups": [
+          {
+            "group": "JavaScript Modules",
+            "pages": ["reference/oauth", "reference/trip-service", "reference/config", "reference/shell"]
+          },
+          {
+            "group": "Data Structures",
+            "pages": ["reference/data-types", "reference/demo-data"]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Hash-router SPA with eight views: Plan, Results, Itinerary, Transit, Map, Alerts, Account, Sign In",
+    "OAuth 2.0 Authorization Code + PKCE flow against an Authentik-compatible provider (no client secret)",
+    "OpenID Connect discovery — provider endpoints fetched from /.well-known/openid-configuration",
+    "Timetable simulation engine that enumerates paths, schedules departures, and tags trips (Fastest, Fewest transfers, Least walking)",
+    "Filterable service alerts by line or stop",
+    "Interactive schematic map with toggleable line overlays",
+    "Mobile-first responsive design with bottom nav on mobile and top nav on desktop",
+    "Full accessibility: skip link, ARIA live regions, focus trapping in drawer, reduced-motion support",
+    "Demo-data mode: plug-and-play without a live backend; swap in real data via trip-service.js"
+  ],
+  "publicApiSurface": [
+    "AUTH config (issuer, clientId, redirectUri, postLogoutRedirectUri, scopes) in js/config.js",
+    "LINKS config (website, transitPolice, support, accountSettings) in js/config.js",
+    "beginLogin(returnTo, env?) → Promise<string> — builds the authorization URL",
+    "startLogin(returnTo, env?) — redirects the browser to the provider",
+    "completeLogin(search, env?) → Promise<{ returnTo, session }> — exchanges the code for tokens",
+    "getSession(env?) → Session | null — reads the active session from sessionStorage",
+    "getAccessToken(env?) → string | null",
+    "signOut(env?) — clears the local session",
+    "signOutEverywhere(env?) → Promise<string | null> — ends the provider session too",
+    "setNotice(code, message, env?) / takeNotice(env?) — one-time cross-page notice",
+    "missingConfig(env?) → string[] — returns missing required config field names",
+    "isConfigured(env?) → boolean",
+    "discover(env?) → Promise<OIDCMetadata>",
+    "searchPlaces(query, limit?) → Place[]",
+    "getPlace(id) → Place | null",
+    "findTrips(query, demo?) → Promise<{ trips: Trip[] }>",
+    "alertsForTrip(trip) → Alert[]",
+    "allAlerts() → Alert[]",
+    "allLines() → Line[]",
+    "allStops() → Stop[]",
+    "setLatency(ms) — controls demo response latency",
+    "mountShell(root) — initialises the persistent app frame",
+    "updateShell(path) — highlights the active nav item",
+    "notifyAuthChange() — dispatches 'cm-auth' event to refresh header/drawer",
+    "openDrawer() / closeDrawer(options?) — slide-in menu controls",
+    "startRouter(callback) — hash-based client-side router",
+    "OAuthError class (code, message)"
+  ]
+}

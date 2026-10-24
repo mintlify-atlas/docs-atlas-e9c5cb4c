@@ -1,20 +1,62 @@
 ---
-title: "Introduction"
-description: "Welcome to your project"
+title: "City Metro Trip-Planner"
+sidebarTitle: "Home"
+description: "Plan rail and bus trips across the City Metro network. This guide covers setup, configuration, authentication, and customizing the app for your transit system."
 ---
 
-Write a short description of your product here. What it does, who it's for, and what they can accomplish with it.
+City Metro Trip-Planner is a mobile-first single-page web application that lets riders plan journeys across rail and bus lines, view service alerts, browse an interactive transit map, and manage their transit account — all from one fast, accessible interface.
 
-<Tip>
-  Ready to make this your own? Start by editing this page. Update your `docs.json` file to customize your site. Then fill out the [Quickstart](/quickstart) page.
-</Tip>
+The app ships with a fully functional demonstration mode so you can explore every feature immediately. When you're ready to go live, swap in your own OAuth 2.0 provider and trip-data backend without touching the UI code.
 
-<Card title="Quickstart" icon="rocket" href="/quickstart">
-  This card links to the quickstart page in your project.
-</Card>
-<Card title="Components" icon="puzzle-piece" href="https://mintlify.com/docs/components">
-  Add cards, callouts, steps, tabs, and more to design and structure your pages.
-</Card>
-<Card title="Settings" icon="gear" href="https://mintlify.com/docs/organize/settings">
-  Set your site name, branding, and navigation in the `docs.json` file.
-</Card>
+<CardGroup cols={2}>
+  <Card title="Introduction" icon="book-open" href="/introduction">
+    Learn what City Metro Trip-Planner is, how it works, and what's included out of the box.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Clone the repo, serve it locally, and have a working trip planner running in minutes.
+  </Card>
+  <Card title="Configuration" icon="sliders" href="/configuration">
+    Set your OAuth provider, client ID, and external links before going live.
+  </Card>
+  <Card title="Authentication" icon="lock" href="/auth/overview">
+    Understand the PKCE OAuth 2.0 flow and how transit accounts are handled.
+  </Card>
+</CardGroup>
+
+## Explore the Features
+
+<CardGroup cols={2}>
+  <Card title="Trip Planner" icon="route" href="/features/trip-planner">
+    Origin-to-destination search with depart-now, depart-at, and arrive-by modes.
+  </Card>
+  <Card title="Service Alerts" icon="bell" href="/features/alerts">
+    Real-time alerts filterable by rail line, bus route, or stop.
+  </Card>
+  <Card title="Transit Map" icon="map" href="/features/transit-map">
+    Schematic map with toggleable line overlays and stop details.
+  </Card>
+  <Card title="Account" icon="user" href="/features/account">
+    Signed-in rider profile, session info, and local or global sign-out.
+  </Card>
+</CardGroup>
+
+## Reference
+
+<CardGroup cols={2}>
+  <Card title="OAuth Module" icon="key" href="/reference/oauth">
+    Full API reference for the PKCE sign-in, token exchange, and session functions.
+  </Card>
+  <Card title="Trip Service" icon="database" href="/reference/trip-service">
+    Place search, trip-finding, and alert query functions used by every view.
+  </Card>
+  <Card title="Data Types" icon="brackets-curly" href="/reference/data-types">
+    TypeScript-style definitions for Place, Trip, Step, Line, Stop, and Alert.
+  </Card>
+  <Card title="Connect Real Data" icon="plug" href="/deployment/real-data">
+    Replace demo data with your live GTFS or trip-planning API.
+  </Card>
+</CardGroup>
+
+<Note>
+  All trip results, alerts, and map data displayed by the app in its default state are **demonstration data** — not real City Metro service information. See [Connecting Real Data](/deployment/real-data) to wire up a live backend.
+</Note>

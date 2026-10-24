@@ -1,0 +1,179 @@
+---
+title: "Set Up OAuth Sign-In for City Metro Trip-Planner"
+sidebarTitle: "Setup"
+description: "Create an Authentik OAuth 2.0 application, copy the issuer URL and Client ID into js/config.js, register the redirect URI, and activate sign-in for riders."
+---
+
+Before any rider can sign in, two fields in `js/config.js` must be filled in: `AUTH.issuer` and `AUTH.clientId`. Until both are present, the sign-in button is rendered as `disabled` and an inline configuration guide explains exactly what is missing. This section walks through creating the Authentik application and wiring it into the app.
+
+<Warning>
+  Always register the **exact** redirect URI on the provider — including the scheme, host, port, and path. The City Metro sign-in service (Authentik) rejects any callback URL that does not match a registered entry character-for-character. Wildcards and partial matches are not accepted.
+</Warning>
+
+---
+
+## Configuration Steps
+
+<Steps>
+  <Step title="Create a public OAuth 2.0 application on Authentik">
+    Sign in to the City Metro Authentik admin console at `https://auth.citymetro.xyz`. Create a new **Provider** with the following settings:
+
+    | Setting | Value |
+    |---------|-------|
+    | Provider type | OAuth2/OpenID Connect Provider |
+    | Client type | **Public** |
+    | Grant type | Authorization Code |
+    | Redirect URI | `https://<your-site>/callback.html` |
+    | Scopes | `openid`, `profile`, `email` |
+
+    Then create an **Application** and attach this provider to it. Note the **application slug** — you will use it to construct the issuer URL.
+
+    <Tip>
+      The sign-in screen in Trip-Planner shows the computed redirect URI with a **Copy** button. Before you have your provider configured, open the app, navigate to the sign-in page, and use that button to copy the exact URL you need to paste into Authentik. This avoids typos.
+    </Tip>
+  </Step>
+
+  <Step title="Set AUTH.issuer in js/config.js">
+    The issuer URL follows a fixed pattern on Authentik. Copy the application slug from the admin console and build the URL:
+
+    ```
+    https://auth.citymetro.xyz/application/o/<APPLICATION_SLUG>/
+    ```
+
+    The trailing slash is required. Open `js/config.js` and set `AUTH.issuer`:
+
+    ```js title="js/config.js"
+    issuer: 'https://auth.citymetro.xyz/application/o/trip-planner/',
+    ```
+
+    At runtime, the app appends `.well-known/openid-configuration` to this URL and fetches the full OIDC metadata document — it never assumes specific endpoint paths.
+  </Step>
+
+  <Step title="Set AUTH.clientId — no client secret is needed">
+    In the Authentik application detail view, copy the **Client ID**. Open `js/config.js` and set `AUTH.clientId`:
+
+    ```js title="js/config.js"
+    clientId: 'abc123xyz...',
+    ```
+
+    No `clientSecret` field exists in the config, and none should ever be added. Trip-Planner is a public client — the PKCE code verifier provides proof of origin without any secret.
+  </Step>
+
+  <Step title="Override AUTH.redirectUri if needed (optional)">
+    By default the redirect URI is computed as `<window.location.origin>/callback.html`. If your deployment serves the app from a subpath or a custom domain, you can pin the URI explicitly:
+
+    ```js title="js/config.js"
+    redirectUri: 'https://tripplanner.citymetro.xyz/callback.html',
+    ```
+
+    Leave `redirectUri` empty for the default behaviour. Whatever value is used — explicit or computed — it must match an entry registered on the Authentik provider exactly.
+  </Step>
+
+  <Step title="Set AUTH.postLogoutRedirectUri if you want global sign-out to return here (optional)">
+    When a rider uses **Sign out of all City Metro services**, the app sends them to the provider's `end_session_endpoint`. If you want the provider to send them back to a specific page afterward, set:
+
+    ```js title="js/config.js"
+    postLogoutRedirectUri: 'https://tripplanner.citymetro.xyz/#/signin',
+    ```
+
+    Register this URL in the Authentik application's **Post-Logout Redirect URIs** list. If left empty, the provider will display its own post-logout page.
+  </Step>
+
+  <Step title="Fill in the LINKS object">
+    The `LINKS` object controls external URLs shown in the navigation drawer. Empty strings cause menu entries to display as unavailable. Fill in the URLs appropriate for your deployment:
+
+    ```js title="js/config.js"
+    export const LINKS = {
+      website:         'https://www.citymetro.xyz',
+      transitPolice:   'https://www.citymetro.xyz/transit-police',
+      support:         'https://support.citymetro.xyz',
+      accountSettings: ''  // empty = Authentik's built-in /if/user/ page
+    };
+    ```
+
+    If `accountSettings` is left empty, the account settings link resolves to `<AUTH.origin>/if/user/` — the default self-service portal on Authentik.
+  </Step>
+
+  <Step title="Load the app and verify sign-in is enabled">
+    Open `index.html` in a browser. Navigate to the **Account** tab or `#/signin`. If both `AUTH.issuer` and `AUTH.clientId` are set, the **Continue with City Metro** button is enabled and tapping it should redirect to the Authentik sign-in page.
+
+    If either value is still empty, the button remains `disabled` and the inline config guide shows which fields are missing.
+  </Step>
+</Steps>
+
+---
+
+## Complete js/config.js Reference
+
+The following is the full `js/config.js` file with placeholder values showing the expected format for each field.
+
+```js title="js/config.js"
+// ─────────────────────────────────────────────────────────────────────────────
+//  City Metro Trip-Planner — configuration
+//  Everything that has to be supplied before real sign-in works lives here.
+//  Nothing in this file is a secret: this app is a *public* OAuth client (PKCE),
+//  so there is no client secret.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const AUTH = {
+  // The sign-in service origin — fixed for all City Metro deployments.
+  origin: 'https://auth.citymetro.xyz',
+
+  // REQUIRED — OpenID Connect issuer for the Authentik application (with trailing slash).
+  //   Format: https://auth.citymetro.xyz/application/o/<APPLICATION_SLUG>/
+  issuer: 'https://auth.citymetro.xyz/application/o/<your-app-slug>/',
+
+  // REQUIRED — Client ID (public client; no secret is used or stored).
+  clientId: '<your-client-id>',
+
+  // Optional — overrides the computed default of <origin>/callback.html.
+  // Must be registered as a redirect URI on the provider.
+  redirectUri: '',
+
+  // Optional — where the provider returns the rider after global sign-out.
+  // Must be registered as a post-logout redirect URI on the provider.
+  postLogoutRedirectUri: '',
+
+  // Scopes requested during authorization.
+  scopes: 'openid profile email'
+};
+
+// Links for the navigation drawer.
+// Empty string = item shown as unavailable in the menu.
+export const LINKS = {
+  website:         '',   // City Metro website
+  transitPolice:   '',   // City Metro Transit Police website
+  support:         '',   // Support page
+  accountSettings: ''    // Transit-account settings. Empty = <AUTH.origin>/if/user/
+};
+```
+
+---
+
+## How missingConfig() Disables the Sign-In Button
+
+`missingConfig()` returns an array of field names that are blank or invalid. The sign-in screen reads this array on every render and conditionally adds `disabled` to the button:
+
+```js title="js/oauth.js — missingConfig"
+export function missingConfig(e) {
+  const c = withEnv(e).config, missing = [];
+  if (!c.issuer || /[<>]/.test(c.issuer)) missing.push('issuer');
+  if (!c.clientId) missing.push('clientId');
+  return missing;
+}
+```
+
+The `/<>/.test(c.issuer)` check catches the literal placeholder strings (`<APPLICATION_SLUG>`) so a copy-pasted-but-unedited config does not accidentally count as configured.
+
+```js title="js/signin.js — button disabled state"
+const missing = missingConfig(), configured = missing.length === 0;
+// ...
+<button id="signInBtn" class="btn primary lg block" type="button"
+  ${configured ? '' : 'disabled aria-describedby="cfgHelp"'}>
+  Continue with City Metro
+</button>
+```
+
+<Note>
+  Both `AUTH.issuer` and `AUTH.clientId` must be non-empty and free of angle-bracket placeholder characters before `configured` becomes `true` and the button activates.
+</Note>

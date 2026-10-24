@@ -1,0 +1,454 @@
+---
+title: "oauth.js — PKCE OAuth 2.0 Module API Reference"
+sidebarTitle: "oauth.js"
+description: "Complete API reference for oauth.js: beginLogin, completeLogin, getSession, signOut, signOutEverywhere, discover, OAuthError, and every supporting export."
+---
+
+The `oauth.js` module implements the full Authorization Code flow with PKCE (S256) for City Metro Trip-Planner. It is a **public client** — no client secret is stored anywhere. Provider endpoints are discovered at runtime from `<issuer>/.well-known/openid-configuration` and never hard-coded. Sessions are written to `sessionStorage` (tab-scoped) and are validated on every read; expired sessions are removed automatically. Every function accepts an optional `env` injection object so the module can be exercised under Node or a test runner without a real browser.
+
+---
+
+## `OAuthError` (class)
+
+`OAuthError` extends the native `Error` class and is thrown by every function in this module when something goes wrong. Catch it by checking `error instanceof OAuthError` or by inspecting `error.name === 'OAuthError'`.
+
+```js title="Catching an OAuthError"
+import { beginLogin, OAuthError } from './js/oauth.js';
+
+try {
+  const url = await beginLogin('#/account');
+  location.assign(url);
+} catch (err) {
+  if (err instanceof OAuthError) {
+    console.error(err.code, err.message);
+  }
+}
+```
+
+### Properties
+
+<ResponseField name="name" type="string">
+  Always `'OAuthError'`. Useful for distinguishing OAuth errors from other `Error` instances without an `instanceof` check.
+</ResponseField>
+
+<ResponseField name="code" type="string">
+  A machine-readable error code. Known values are listed below.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  A human-readable description suitable for display in the UI.
+</ResponseField>
+
+### Known `code` values
+
+<Accordion title="All OAuthError codes">
+
+| Code | When it is thrown |
+|---|---|
+| `not_configured` | `issuer` or `clientId` is missing from `AUTH` config |
+| `cancelled` | The provider returned `error=access_denied` (user pressed Cancel) |
+| `state_mismatch` | The `state` parameter in the callback does not match the stored flow |
+| `flow_expired` | More than 10 minutes passed between `beginLogin` and `completeLogin` |
+| `token_failed` | The token endpoint was unreachable or did not return an `access_token` |
+| `id_token_invalid` | ID token claims failed validation (issuer, audience, expiry, nonce, or sub mismatch) |
+| `discovery_failed` | The OIDC discovery endpoint was unreachable or returned an invalid document |
+| `no_flow` | `completeLogin` was called but no pending flow exists in `sessionStorage` |
+| `missing_code` | The callback URL contained no `code` parameter |
+| `provider_error` | The provider returned a non-`access_denied` OAuth error response |
+| `unknown` | An unexpected condition not covered by any other code |
+
+</Accordion>
+
+---
+
+## Utility functions
+
+These low-level helpers are exported for testing and reuse but are also called internally by the main flow functions.
+
+### `randomString(bytes?)`
+
+Returns a base64url-encoded cryptographically random string.
+
+<ParamField path="bytes" type="number" default="32">
+  Number of random bytes to generate. The returned string will be longer than `bytes` characters due to base64url encoding.
+</ParamField>
+
+```js
+import { randomString } from './js/oauth.js';
+
+const state    = randomString(24);  // ~32-char string
+const verifier = randomString(48);  // ~64-char string
+```
+
+---
+
+### `pkceChallenge(verifier)`
+
+Computes the PKCE S256 code challenge for a given verifier string. Returns a `Promise<string>` containing the SHA-256 digest of `verifier`, base64url-encoded.
+
+<ParamField path="verifier" type="string" required>
+  The plain-text PKCE code verifier, typically produced by `randomString(48)`.
+</ParamField>
+
+```js
+import { randomString, pkceChallenge } from './js/oauth.js';
+
+const verifier  = randomString(48);
+const challenge = await pkceChallenge(verifier);
+// challenge → 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM'
+```
+
+---
+
+### `decodeJwt(jwt)`
+
+Decodes the payload of a JWT **without verifying its signature**. Returns the parsed payload object, or an empty object `{}` if decoding fails for any reason.
+
+<ParamField path="jwt" type="string" required>
+  The full JWT string in `header.payload.signature` format.
+</ParamField>
+
+<Note>
+  This function intentionally skips signature verification. Per OIDC Core §3.1.3.7, tokens received directly from the token endpoint over TLS do not require local signature verification. Never use this function to make trust decisions in other contexts.
+</Note>
+
+---
+
+## Configuration helpers
+
+### `redirectUri(env?)`
+
+Returns the configured redirect URI. Falls back to `<origin>/callback.html` when `AUTH.redirectUri` is empty.
+
+<ParamField path="env" type="EnvOverride">
+  Optional test-injection object (see [env injection](#env-injection)).
+</ParamField>
+
+---
+
+### `missingConfig(env?)`
+
+Returns an array of the required `AUTH` config keys that are missing or invalid. An empty array means the module is fully configured.
+
+Returns `string[]` — any combination of `'issuer'` and `'clientId'`.
+
+```js
+import { missingConfig } from './js/oauth.js';
+
+const missing = missingConfig();
+if (missing.length) {
+  console.warn('Sign-in not configured. Missing:', missing.join(', '));
+}
+```
+
+---
+
+### `isConfigured(env?)`
+
+Returns `true` when both `AUTH.issuer` and `AUTH.clientId` are present and valid, `false` otherwise. Equivalent to `missingConfig(env).length === 0`.
+
+---
+
+### `safeReturn(r)`
+
+Validates that `r` is a safe in-app hash route (matching `#/<path>`) to prevent open-redirect attacks. Returns `r` unchanged if it matches, or `'#/account'` as a safe fallback.
+
+<ParamField path="r" type="string" required>
+  A candidate `returnTo` value, typically sourced from user input or query parameters.
+</ParamField>
+
+---
+
+## Discovery
+
+### `discover(env?)`
+
+Fetches and caches the OIDC provider metadata from `<issuer>/.well-known/openid-configuration`. Results are cached in a module-level `Map` keyed by issuer URL, so the network is hit only once per issuer per page load.
+
+<ParamField path="env" type="EnvOverride">
+  Optional test-injection object.
+</ParamField>
+
+Returns `Promise<OIDCMetadata>` — the parsed JSON document from the discovery endpoint. The object is guaranteed to contain `authorization_endpoint`, `token_endpoint`, and `issuer`.
+
+<Warning>
+  Throws `OAuthError('discovery_failed', …)` if the network request fails, if the HTTP response is not `ok`, or if the returned document is missing any required field.
+</Warning>
+
+---
+
+### `clearDiscoveryCache()`
+
+Clears the in-memory OIDC discovery cache. Call this in tests between cases that exercise different issuers or simulate discovery failures.
+
+```js
+import { clearDiscoveryCache } from './js/oauth.js';
+
+afterEach(() => clearDiscoveryCache());
+```
+
+---
+
+## Login flow
+
+### `beginLogin(returnTo, env?)`
+
+Builds the full authorization URL for the PKCE flow and persists the flow state to `sessionStorage`. This is **step 1** of the two-step sign-in process.
+
+<ParamField path="returnTo" type="string" required>
+  A hash route to redirect back to after successful sign-in (e.g. `'#/account'`). Validated through `safeReturn()` — non-hash values silently fall back to `'#/account'`.
+</ParamField>
+
+<ParamField path="env" type="EnvOverride">
+  Optional test-injection object.
+</ParamField>
+
+Returns `Promise<string>` — the full provider authorization URL, including `response_type`, `client_id`, `redirect_uri`, `scope`, `state`, `nonce`, `code_challenge`, and `code_challenge_method=S256`.
+
+<Steps>
+  <Step title="Check configuration">
+    Calls `missingConfig()`. Throws `OAuthError('not_configured', …)` if any required key is absent.
+  </Step>
+  <Step title="Discover provider">
+    Calls `discover()` to obtain `authorization_endpoint`.
+  </Step>
+  <Step title="Generate PKCE material">
+    Creates a random `verifier` (48 bytes), `state` (24 bytes), and `nonce` (16 bytes). Computes the S256 `code_challenge`.
+  </Step>
+  <Step title="Persist flow state">
+    Writes `{ state, verifier, nonce, returnTo, at }` to `sessionStorage` under the key `cm_tp_oauth`.
+  </Step>
+  <Step title="Return URL">
+    Returns the fully-formed authorization URL string. The caller (or `startLogin`) redirects to it.
+  </Step>
+</Steps>
+
+```js
+import { beginLogin } from './js/oauth.js';
+
+const url = await beginLogin('#/account');
+location.assign(url);
+```
+
+---
+
+### `startLogin(returnTo, env?)`
+
+Convenience wrapper that calls `beginLogin()` then immediately redirects using `location.assign()`. Parameters and error behaviour are identical to `beginLogin`.
+
+```js
+import { startLogin } from './js/oauth.js';
+
+await startLogin('#/account');
+// browser navigates to the provider authorization page
+```
+
+---
+
+### `completeLogin(search, env?)`
+
+Validates the provider callback, exchanges the authorization code for tokens, validates the ID token, fetches `userinfo`, and writes the session to `sessionStorage`. This is **step 2** of the two-step sign-in process and runs inside `callback.html`.
+
+<ParamField path="search" type="string" required>
+  The `location.search` string from the callback page, e.g. `'?code=abc&state=xyz'`.
+</ParamField>
+
+<ParamField path="env" type="EnvOverride">
+  Optional test-injection object.
+</ParamField>
+
+Returns `Promise<{ returnTo: string, session: Session }>` on success.
+
+<Steps>
+  <Step title="Read and clear flow state">
+    Reads the stored flow from `sessionStorage` (`cm_tp_oauth`) and immediately removes it — it is single-use even when an error follows.
+  </Step>
+  <Step title="Check for provider errors">
+    Throws `OAuthError('cancelled', …)` for `access_denied`; throws `OAuthError('provider_error', …)` for any other `error` parameter.
+  </Step>
+  <Step title="Validate flow freshness">
+    Throws `OAuthError('no_flow', …)` if no flow was found. Throws `OAuthError('flow_expired', …)` if more than 10 minutes have elapsed.
+  </Step>
+  <Step title="Validate state">
+    Throws `OAuthError('state_mismatch', …)` if the `state` parameter does not match the stored value.
+  </Step>
+  <Step title="Exchange code for tokens">
+    Posts to `token_endpoint` with `grant_type=authorization_code`, `code`, `redirect_uri`, `client_id`, and `code_verifier`. Throws `OAuthError('token_failed', …)` on network error or non-OK response.
+  </Step>
+  <Step title="Validate ID token claims">
+    Checks `sub`, `iss`, `aud`, `exp`, and `nonce`. Throws `OAuthError('id_token_invalid', …)` on any mismatch.
+  </Step>
+  <Step title="Fetch userinfo">
+    If `userinfo_endpoint` is present in the discovery document, fetches the endpoint with the access token. Failures are silently ignored (the ID token already carries identity).
+  </Step>
+  <Step title="Write session">
+    Merges ID token claims with userinfo, builds a `Session` object, and writes it to `sessionStorage` under `cm_tp_session`.
+  </Step>
+</Steps>
+
+<Warning>
+  If `info.sub` is present but differs from `id.sub`, the function throws `OAuthError('id_token_invalid', …)` to prevent subject confusion attacks.
+</Warning>
+
+---
+
+## Session management
+
+### `getSession(env?)`
+
+Reads and validates the current session from `sessionStorage`. Returns `null` and removes the stored session if it has expired.
+
+Returns `Session | null`.
+
+```js
+import { getSession } from './js/oauth.js';
+
+const session = getSession();
+if (session) {
+  console.log('Signed in as', session.user.name);
+}
+```
+
+#### Session object shape
+
+<ResponseField name="user" type="object">
+  The authenticated user's profile.
+  <Expandable title="user fields">
+    <ResponseField name="sub" type="string">Stable subject identifier from the ID token.</ResponseField>
+    <ResponseField name="name" type="string">Display name. Falls back to `preferred_username`, then the local part of the email address, then `'Rider'`.</ResponseField>
+    <ResponseField name="email" type="string">Email address, or `''` if not provided.</ResponseField>
+    <ResponseField name="username" type="string">`preferred_username` claim, or `''` if not provided.</ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="idToken" type="string">
+  The raw ID token string as returned by the token endpoint.
+</ResponseField>
+
+<ResponseField name="accessToken" type="string">
+  The bearer access token for calling protected APIs.
+</ResponseField>
+
+<ResponseField name="expiresAt" type="number">
+  Epoch milliseconds at which the session expires. Derived from `expires_in` if provided, otherwise from the ID token's `exp` claim.
+</ResponseField>
+
+---
+
+### `getAccessToken(env?)`
+
+Returns `string | null` — the `accessToken` from the current session, or `null` if there is no valid session.
+
+---
+
+## Notice system
+
+The notice system provides a one-time, cross-page message channel via `sessionStorage`. It is used to pass error or informational messages from the callback page back to the sign-in page after a redirect.
+
+### `setNotice(code, message, env?)`
+
+Writes a one-time notice to `sessionStorage` under the key `cm_tp_notice`.
+
+<ParamField path="code" type="string" required>
+  A machine-readable code identifying the notice type (e.g. `'session_expired'`, `'cancelled'`).
+</ParamField>
+
+<ParamField path="message" type="string" required>
+  The human-readable message to display to the user.
+</ParamField>
+
+---
+
+### `takeNotice(env?)`
+
+Reads and removes the one-time notice from `sessionStorage`. Returns `{ code: string, message: string } | null`. Returns `null` if no notice is stored or if the stored value cannot be parsed.
+
+```js
+import { takeNotice } from './js/oauth.js';
+
+const notice = takeNotice();
+if (notice) {
+  showBanner(notice.message); // display once, then it's gone
+}
+```
+
+---
+
+## Sign-out
+
+### `signOut(env?)`
+
+Signs out of Trip-Planner only. Removes `cm_tp_session` and `cm_tp_oauth` from `sessionStorage`. The user's City Metro transit account at the provider remains active.
+
+```js
+import { signOut, notifyAuthChange } from './js/oauth.js';
+import { notifyAuthChange } from './js/shell.js';
+
+signOut();
+notifyAuthChange(); // update the header chip and drawer
+```
+
+---
+
+### `signOutEverywhere(env?)`
+
+Signs the user out of **all City Metro services** by ending the provider session via the `end_session_endpoint` from the discovery document.
+
+Returns `Promise<string | null>` — the URL to redirect the browser to for global sign-out, or `null` if the provider does not expose an `end_session_endpoint` or if discovery fails.
+
+<Tip>
+  Always calls `signOut()` first, so the local session is cleared regardless of whether the provider URL is available or the redirect actually happens.
+</Tip>
+
+```js
+import { signOutEverywhere } from './js/oauth.js';
+
+const url = await signOutEverywhere();
+if (url) {
+  location.assign(url); // redirect to provider to end the global session
+} else {
+  navigate('/'); // local sign-out already done
+}
+```
+
+---
+
+## `env` injection
+
+Every function in this module accepts an optional `env` object as its last argument. When supplied, its properties override the corresponding browser globals, making the module fully testable outside a browser.
+
+<ParamField body="fetch" type="function">
+  Replacement for `globalThis.fetch`. Signature matches the Fetch API: `(input, init?) => Promise<Response>`.
+</ParamField>
+
+<ParamField body="storage" type="Storage">
+  Replacement for `globalThis.sessionStorage`. Must implement `getItem`, `setItem`, and `removeItem`.
+</ParamField>
+
+<ParamField body="now" type="function">
+  Returns the current epoch time in milliseconds. Defaults to `() => Date.now()`. Override to simulate clock advancement.
+</ParamField>
+
+<ParamField body="origin" type="string">
+  The app origin used when computing the default `redirectUri`. Defaults to `location.origin`.
+</ParamField>
+
+<ParamField body="config" type="object">
+  A replacement `AUTH` config object. Must have the same shape as the `AUTH` export from `config.js`.
+</ParamField>
+
+```js title="Example test setup"
+import { beginLogin, clearDiscoveryCache } from './js/oauth.js';
+
+const storage = new Map();
+const env = {
+  fetch: async (url) => ({ ok: true, json: async () => fakeMetadata }),
+  storage: { getItem: k => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v), removeItem: k => storage.delete(k) },
+  now: () => 1_700_000_000_000,
+  origin: 'https://app.example.com',
+  config: { issuer: 'https://auth.example.com/', clientId: 'test-client', scopes: 'openid profile email' }
+};
+
+clearDiscoveryCache();
+const url = await beginLogin('#/account', env);
+```

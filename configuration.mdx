@@ -1,0 +1,163 @@
+---
+title: "Configure City Metro Trip-Planner Before Going Live"
+sidebarTitle: "Configuration"
+description: "A field-by-field reference for js/config.js — the AUTH object (OIDC/PKCE settings) and the LINKS object (external URLs shown in the menu drawer)."
+---
+
+All runtime configuration for City Metro Trip-Planner lives in one file: `js/config.js`. It exports two plain objects — `AUTH`, which controls how the app authenticates riders with the City Metro sign-in service, and `LINKS`, which supplies the external URLs rendered in the menu drawer. Neither object contains anything secret: the app is a **public OAuth client** that uses PKCE and never stores a client secret anywhere.
+
+Open `js/config.js` in any text editor, fill in the fields described below, and save. Because the app has no build step, your changes are live as soon as you reload the browser.
+
+<Warning>
+  City Metro Trip-Planner is a **public OAuth client**. It uses the Authorization Code flow with PKCE (Proof Key for Code Exchange, S256) and does **not** use a client secret. Never add a `clientSecret` field to `AUTH` — secrets embedded in client-side JavaScript are visible to anyone who views the source.
+</Warning>
+
+## The `AUTH` Object
+
+The `AUTH` object configures the OpenID Connect / OAuth 2.0 sign-in flow. Provider endpoints (authorization, token, userinfo, end-session) are discovered automatically from `<issuer>/.well-known/openid-configuration` — they are never hard-coded.
+
+<ParamField path="AUTH.origin" type="string" required>
+  The base origin of the City Metro sign-in service. This value is **fixed** at `'https://auth.citymetro.xyz'` and must not be changed. It is used by `js/components/shell.js` to render the auth-origin hostname in the account chip and by `oauth.js` as the fallback account-settings URL.
+</ParamField>
+
+<ParamField path="AUTH.issuer" type="string" required>
+  The full OpenID Connect issuer URL for the Authentik application created for this app, **with a trailing slash**. The format is:
+
+  ```
+  https://auth.citymetro.xyz/application/o/<APPLICATION_SLUG>/
+  ```
+
+  Leave this empty until the Authentik application exists. The `isConfigured()` helper in `js/auth/oauth.js` checks this field (along with `clientId`) before allowing sign-in; an empty or invalid value causes the sign-in screen to display an "auth not configured" prompt instead of redirecting the user.
+</ParamField>
+
+<ParamField path="AUTH.clientId" type="string" required>
+  The Client ID of the Authentik application. This is a public identifier (not a secret) assigned when you create the application in Authentik's admin interface. It is sent in the authorization request, the token exchange, and the `audience` check on the returned ID token.
+</ParamField>
+
+<ParamField path="AUTH.redirectUri" type="string">
+  The URI the provider sends the browser back to after a successful (or failed) authorization attempt. **Optional** — when left empty, `oauth.js` constructs the default value at runtime:
+
+  ```
+  <window.location.origin>/callback.html
+  ```
+
+  Set this explicitly if your deployment does not serve `callback.html` at the root path, or if you need the URI to be stable across multiple origins (for example, a staging and a production deployment sharing the same Authentik application).
+
+  Whatever value is used — the explicit one or the runtime default — **must be registered as a Redirect URI** on the Authentik application before sign-in will succeed.
+</ParamField>
+
+<ParamField path="AUTH.postLogoutRedirectUri" type="string">
+  Where the provider sends the browser after a global sign-out (i.e., "Sign out of all City Metro services"). **Optional.** When set, the value is appended as `post_logout_redirect_uri` to the provider's `end_session_endpoint` URL. Like `redirectUri`, it must be registered on the provider.
+
+  If left empty, a global sign-out still clears the local session; the browser ends up wherever the provider redirects by default.
+</ParamField>
+
+<ParamField path="AUTH.scopes" type="string" default="openid profile email">
+  The OAuth scopes requested during authorization. The default value `'openid profile email'` is sufficient for the account view to display the rider's name and email address. You may add additional scopes (for example, `'offline_access'`) if your deployment needs them, subject to what the Authentik application permits.
+</ParamField>
+
+<Note>
+  Before any sign-in will succeed, register the redirect URI on your Authentik application. Navigate to **Admin → Applications → \<your app\> → Protocol Settings → Redirect URIs** and add the full URL of `callback.html` as it will be served in production. If `AUTH.redirectUri` is empty, the value the app uses is `window.location.origin + '/callback.html'` — so for a deployment at `https://trips.citymetro.example` the redirect URI to register is `https://trips.citymetro.example/callback.html`.
+</Note>
+
+## The `LINKS` Object
+
+The `LINKS` object supplies the four external URLs that appear in the menu drawer. Every field defaults to an empty string. When a field is empty, the drawer renders the corresponding item as a disabled button with a "Link not configured yet" label — it never shows a broken link or throws an error.
+
+<ParamField path="LINKS.website" type="string">
+  The main City Metro public website URL. Rendered as a "City Metro website" link in the drawer's "More from City Metro" section. Example: `'https://www.citymetro.example'`.
+</ParamField>
+
+<ParamField path="LINKS.transitPolice" type="string">
+  URL for the City Metro Transit Police website. Rendered as a "City Metro Transit Police" link. Example: `'https://police.citymetro.example'`.
+</ParamField>
+
+<ParamField path="LINKS.support" type="string">
+  URL for rider support. Rendered as a "Support" link. Example: `'https://support.citymetro.example'`.
+</ParamField>
+
+<ParamField path="LINKS.accountSettings" type="string">
+  Optional deep link to the Authentik user self-service settings page. When left empty, the account view falls back to `<AUTH.origin>/if/user/` — Authentik's built-in user portal. Set this explicitly if your deployment uses a custom account management URL. Example: `'https://auth.citymetro.xyz/if/user/'`.
+</ParamField>
+
+## Complete Annotated `js/config.js`
+
+The file below shows every configurable field with inline comments explaining each one. Copy this as a reference when setting up a new deployment.
+
+```js js/config.js
+// ─────────────────────────────────────────────────────────────────────────────
+//  City Metro Trip-Planner — configuration
+//  Everything that has to be supplied before real sign-in works lives here.
+//  Nothing in this file is a secret: this app is a *public* OAuth client
+//  (PKCE), so there is no client secret.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const AUTH = {
+  // The sign-in service. This origin is fixed; the application slug is NOT known yet.
+  origin: 'https://auth.citymetro.xyz',
+
+  // REQUIRED — the OpenID Connect issuer of the Authentik application created
+  // for this app, with trailing slash:
+  //   https://auth.citymetro.xyz/application/o/<APPLICATION_SLUG>/
+  // Leave empty until the application exists. (Not guessed on purpose.)
+  issuer: '',
+
+  // REQUIRED — the Client ID of that application (a public client; no secret
+  // is ever used or stored here).
+  clientId: '',
+
+  // Optional — where the provider sends people back after sign-in.
+  // Empty = "<this site>/callback.html".
+  // Whatever it resolves to must be registered as a redirect URI on the
+  // provider (the Account/Sign-in screens show it).
+  redirectUri: '',
+
+  // Optional — where the provider sends people after "Sign out of all City
+  // Metro services". Must be registered too.
+  postLogoutRedirectUri: '',
+
+  scopes: 'openid profile email'
+};
+
+// Links for the menu. Empty string = not configured yet (the menu shows the
+// item as unavailable).
+// URLs are intentionally NOT filled in: supply the real ones.
+export const LINKS = {
+  website: '',          // City Metro website
+  transitPolice: '',    // City Metro Transit Police website
+  support: '',          // Support
+  accountSettings: ''   // Optional: transit-account settings page.
+                        // Empty = "<AUTH.origin>/if/user/" (Authentik's own
+                        // user settings)
+};
+```
+
+## Minimum Configuration Checklist
+
+Use this checklist before going live with real sign-in:
+
+<Steps>
+  <Step title="Create an Authentik application">
+    In the Authentik admin panel, create a new **OAuth2/OIDC Provider** and an **Application** that uses it. Record the **issuer URL** (including the trailing slash) and the **Client ID**.
+  </Step>
+  <Step title="Fill in AUTH.issuer and AUTH.clientId">
+    Open `js/config.js` and paste the issuer URL and client ID into the corresponding fields. Leave `AUTH.origin` unchanged.
+  </Step>
+  <Step title="Register the redirect URI">
+    Add the full URL of `callback.html` as a Redirect URI on the Authentik provider. If `AUTH.redirectUri` is empty in `config.js`, the value the app will send is `window.location.origin + '/callback.html'`.
+  </Step>
+  <Step title="(Optional) Register the post-logout redirect URI">
+    If you set `AUTH.postLogoutRedirectUri`, register that URL too, under the provider's **Post-logout Redirect URIs** setting.
+  </Step>
+  <Step title="Fill in the LINKS object">
+    Supply real URLs for `website`, `transitPolice`, and `support`. These control what appears in the menu drawer. Items left empty are gracefully shown as unavailable — they will not break the app.
+  </Step>
+</Steps>
+
+<Accordion title="What happens if AUTH is misconfigured?">
+  The `missingConfig()` function in `js/auth/oauth.js` checks `AUTH.issuer` and `AUTH.clientId` before every sign-in attempt. If either field is empty (or if `issuer` contains `<` or `>` characters), `beginLogin()` throws an `OAuthError` with code `not_configured`. The sign-in view catches this error and renders an informational prompt rather than attempting a redirect, so misconfiguration is safe and visible — it does not crash the app or produce a broken redirect.
+</Accordion>
+
+<Accordion title="How are sessions stored?">
+  After a successful sign-in, the session (user claims, access token, ID token, and expiry timestamp) is stored in `sessionStorage` under the key `cm_tp_session`. `sessionStorage` is tab-scoped — closing the tab ends the session. `localStorage` is never used for authentication data. Tokens are never written to a cookie.
+</Accordion>

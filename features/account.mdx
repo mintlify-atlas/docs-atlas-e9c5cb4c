@@ -1,0 +1,159 @@
+---
+title: "Rider Account: Profile, Session Info, and Sign-Out"
+sidebarTitle: "Account"
+description: "View your City Metro profile and tab-scoped session expiry, link to account settings, and choose local or global sign-out from the Account screen."
+---
+
+The Account screen at `/account` is the signed-in rider's control panel. It displays the profile retrieved during the OAuth 2.0 / PKCE sign-in flow, shows when the current browser-tab session expires, provides a link to the City Metro transit account management portal, and offers two distinct sign-out actions so riders can choose the right scope of sign-out for their situation. Visitors who are not signed in are redirected immediately to the Sign In screen rather than seeing an empty page.
+
+## Authentication Guard
+
+`renderAccount()` reads the current session at mount time. If no valid session exists in `sessionStorage`, it delegates straight to `renderSignIn()` — no redirect, no flash of empty content:
+
+```js title="js/account.js"
+export function renderAccount(main, ctx) {
+  const s = getSession();
+  if (!s) return renderSignIn(main, ctx);
+  // … render the profile UI …
+}
+```
+
+`getSession()` also silently removes any expired session token and sets a one-time notice that is displayed on the sign-in screen, so riders see "Your session ended. Sign in again to continue." rather than a silent redirect.
+
+## Profile Card
+
+When a valid session exists the Account screen renders a profile card with three pieces of user identity drawn from the OIDC claims returned by the provider:
+
+<CardGroup cols={1}>
+  <Card title="Display name" icon="user">
+    Rendered as a heading. Also used to generate the initials avatar (`initials(s.user.name)`) — for example, "Alex Rider" produces the avatar label **AR**. Falls back to `preferred_username` then the local-part of the email address, then `'Rider'`.
+  </Card>
+  <Card title="Email address" icon="mail">
+    Shown below the name. Hidden if the `email` claim is absent from the token response.
+  </Card>
+  <Card title="Username" icon="at-sign">
+    Displayed as `@username` in a muted style when `preferred_username` is present in the claims.
+  </Card>
+</CardGroup>
+
+```js title="js/account.js"
+// Profile section (simplified)
+`<span class="avatar xl" aria-hidden="true">${esc(initials(s.user.name))}</span>
+<div>
+  <h2>${esc(s.user.name)}</h2>
+  ${s.user.email    ? `<p>${esc(s.user.email)}</p>`               : ''}
+  ${s.user.username ? `<p class="muted">@${esc(s.user.username)}</p>` : ''}
+</div>`
+```
+
+## Session Expiry
+
+The session token carries an `expiresAt` field (epoch milliseconds) set when the token response is stored. The Account screen renders this as a human-readable time using `fmtTime()`:
+
+```js title="js/account.js"
+`<p class="fine">
+  This sign-in is valid until about ${esc(fmtTime(s.expiresAt))} in this browser tab.
+</p>`
+```
+
+`fmtTime(s.expiresAt)` formats the expiry as a local clock time — for example, `"valid until ~14:32"`. When the expiry passes and the rider next visits any authenticated screen, `getSession()` clears the stale token automatically.
+
+<Info>
+  Session data is stored in `sessionStorage`, not `localStorage`. This means the session is **tab-scoped**: it is not shared between browser tabs, and it is erased automatically when the tab is closed. Opening a new tab always starts with a signed-out state.
+</Info>
+
+## Manage Transit Account
+
+The **Manage transit account** button links to the City Metro account management portal. The URL is resolved in order:
+
+1. `LINKS.accountSettings` if configured in `js/config.js`
+2. Falls back to `AUTH.origin + '/if/user/'` (Authentik's built-in user settings page)
+
+```js title="js/account.js"
+import { AUTH, LINKS } from '../config.js';
+
+const manage = LINKS.accountSettings || `${AUTH.origin}/if/user/`;
+```
+
+```js title="js/config.js"
+export const LINKS = {
+  // Optional: transit-account settings page.
+  // Empty = AUTH.origin + '/if/user/' (Authentik's own user settings)
+  accountSettings: ''
+};
+```
+
+The link opens in a new tab (`target="_blank"`) with `rel="noopener noreferrer"` so it does not expose a `window.opener` reference to the external portal.
+
+## Two Sign-Out Options
+
+The Account screen provides two distinct sign-out buttons, each with a different scope of effect.
+
+<Tip>
+  Use **Sign out of Trip-Planner** when you are stepping away from a shared device briefly or just want to clear your session in this tab — your other City Metro apps (journey history, account portal, etc.) remain signed in. Use **Sign out of all City Metro services** when you are finished on a public or shared device and want to ensure no City Metro application remains signed in anywhere in the browser.
+</Tip>
+
+### Sign out of Trip-Planner
+
+Clears only the local session in this browser tab. The City Metro provider session is untouched, so other City Metro applications and a fresh load of Trip-Planner will be able to sign back in without entering credentials again (the provider will issue a new token silently or with a single click).
+
+```js title="js/account.js"
+$('#signOutBtn').addEventListener('click', () => {
+  signOut();           // removes cm_tp_session and cm_tp_flow from sessionStorage
+  notifyAuthChange();  // fires 'cm-auth' event so the shell re-renders the header chip
+  toast('You signed out of Trip-Planner.');
+  navigate('/');
+});
+```
+
+`signOut()` removes the `cm_tp_session` and `cm_tp_flow` keys from `sessionStorage`. Nothing is written to `localStorage` and no network request is made.
+
+### Sign out of all City Metro services
+
+Ends the session both locally and at the central City Metro sign-in service. After clearing the local token, `signOutEverywhere()` fetches the OpenID Connect discovery document and checks for an `end_session_endpoint`. If one is found it builds the logout URL (attaching `id_token_hint` and `post_logout_redirect_uri` when configured) and redirects the browser there, which ends the provider session and signs the rider out of all City Metro applications.
+
+```js title="js/account.js"
+$('#signOutAll').addEventListener('click', async e => {
+  const b = e.currentTarget;
+  b.disabled = true;
+  b.classList.add('is-loading');
+  const url = await signOutEverywhere();  // clears local session; returns end_session URL or null
+  notifyAuthChange();
+  if (url) location.assign(url);          // redirect to provider's logout endpoint
+  else {
+    toast('Signed out here. The sign-in service did not offer a global sign-out.');
+    navigate('/');
+  }
+});
+```
+
+```js title="js/oauth.js"
+// Signs out of all City Metro services. Returns the end_session URL or null.
+export async function signOutEverywhere(e) {
+  const env = withEnv(e), session = getSession(env);
+  let url = null;
+  try {
+    const meta = await discover(env);
+    if (meta.end_session_endpoint) {
+      const u = new URL(meta.end_session_endpoint);
+      if (session && session.idToken)
+        u.searchParams.set('id_token_hint', session.idToken);
+      if (env.config.postLogoutRedirectUri)
+        u.searchParams.set('post_logout_redirect_uri', env.config.postLogoutRedirectUri);
+      url = u.toString();
+    }
+  } catch { /* offline or unconfigured: fall back to local sign-out */ }
+  signOut(env);   // always clears local session
+  return url;
+}
+```
+
+If the provider is unreachable or does not advertise `end_session_endpoint`, the function still clears the local session and shows a toast rather than leaving the rider in a broken state.
+
+## Session Storage Keys
+
+| Key | Contents | Cleared by |
+|-----|----------|-----------|
+| `cm_tp_session` | Serialised session object: user claims, tokens, `expiresAt` | `signOut()`, `signOutEverywhere()`, tab close |
+| `cm_tp_flow` | PKCE flow state: `state`, `verifier`, `nonce`, `returnTo` | `completeLogin()`, `signOut()`, tab close |
+| `cm_tp_notice` | One-time notice code and message for the sign-in screen | `takeNotice()` (consumed on read) |

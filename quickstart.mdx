@@ -1,47 +1,115 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with City Metro Trip-Planner"
+sidebarTitle: "Quickstart"
+description: "Clone the repo, spin up any static file server, and explore all eight app screens in demo mode — no package manager, build tool, or API key required."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
+City Metro Trip-Planner is a zero-dependency static web application. Because it uses native ES modules loaded directly by the browser, the only requirement for local development is a static file server running on the same origin as both `index.html` and `callback.html`. There is no package installation, no compilation, and no environment setup beyond choosing a port. The steps below take you from a fresh clone to a fully working app in under two minutes.
 
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
-
-## Prerequisites
-
-Before you begin, you must have:
-
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
-
-## Get started
+<Note>
+  No build step or package manager is required. The browser loads `js/app.js` as a native ES module (`<script type="module">`), which then imports all other modules directly. Serving the files over HTTP (even `localhost`) is the only prerequisite — opening `index.html` as a `file://` URL will not work because browsers block ES module cross-origin imports from the filesystem.
+</Note>
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+  <Step title="Clone or download the repository">
+    Clone the repository to your local machine using Git, or download and unzip a release archive.
 
     ```bash
-    npm install your-package
+    git clone https://github.com/City-Metro/mobileapp-v3.git
+    cd mobileapp-v3
     ```
+
+    The repository root contains everything the app needs: `index.html`, `callback.html`, `css/`, `js/`, and `img/`. There is no `package.json`, no `node_modules`, and no lockfile to install.
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
 
-    ```bash
-    your-cli init
-    ```
+  <Step title="Start a static file server">
+    Any HTTP server that can serve static files from the repository root will work. Choose whichever tool you have available:
+
+    <CodeGroup>
+      ```bash npx serve (Node.js)
+      # Serves on http://localhost:3000 by default
+      npx serve .
+      ```
+
+      ```bash Python 3
+      # Serves on http://localhost:8080
+      python3 -m http.server 8080
+      ```
+    </CodeGroup>
+
+    <Tip>
+      `npx serve .` does not require a global installation — Node.js downloads and runs `serve` on demand. If you prefer a permanent install, run `npm install -g serve` once and then just use `serve .` going forward.
+    </Tip>
+
+    Once the server is running, note the port it reports. The examples below use `3000` (the `npx serve` default); substitute your actual port if it differs.
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
 
-    ```bash
-    your-cli start
+  <Step title="Open the app and explore demo mode">
+    Navigate to the app in your browser:
+
     ```
+    http://localhost:3000
+    ```
+
+    The app opens on the **Plan your trip** screen (`#/`). Because `js/config.js` ships with empty `AUTH.issuer` and `AUTH.clientId` fields, the app automatically runs in demo mode — all trip planning, alerts, and the transit map are powered by the sample data in `js/demo-data.js`.
+
+    Explore all eight screens using the bottom navigation bar (mobile) or the top navigation bar (≥ 900 px wide):
+
+    | Screen | Hash route | What to try |
+    |---|---|---|
+    | Plan | `#/` | Type a stop name (e.g. "Union Station") and search for trips |
+    | Results | `#/results` | Appears after a successful search; browse ranked itineraries |
+    | Itinerary | `#/trip` | Tap any result to see the step-by-step leg breakdown |
+    | Transit | `#/transit` | Browse all lines and stops with live headway info |
+    | Map | `#/map` | Explore the schematic rail and bus network map |
+    | Alerts | `#/alerts` | View the three sample service alerts |
+    | Account | `#/account` | Shows the "not signed in" state in demo mode |
+    | Sign In | `#/signin` | Shows the unconfigured-OAuth prompt in demo mode |
+
+    <Warning>
+      Every trip result, alert, and stop name in demo mode is **fictional demonstration data** — it is not real City Metro service information. The app displays a "Demonstration data — not real service information" notice in the menu drawer as a reminder.
+    </Warning>
+  </Step>
+
+  <Step title="(Optional) Configure OAuth for real sign-in">
+    When you are ready to enable real transit-account sign-in, open `js/config.js` and fill in the `AUTH` object with your Authentik application's issuer URL and client ID. See the [Configuration guide](/configuration) for a field-by-field reference.
+
+    ```js js/config.js (minimum required changes)
+    export const AUTH = {
+      origin:    'https://auth.citymetro.xyz',   // fixed — do not change
+      issuer:    'https://auth.citymetro.xyz/application/o/<YOUR_SLUG>/',
+      clientId:  '<YOUR_CLIENT_ID>',
+      redirectUri: '',                            // defaults to <origin>/callback.html
+      postLogoutRedirectUri: '',
+      scopes:    'openid profile email'
+    };
+    ```
+
+    <Note>
+      Before sign-in will work, the URL that `callback.html` is served from must be registered as a **Redirect URI** on your Authentik application. The app uses PKCE (Proof Key for Code Exchange) and is a public client — there is no client secret to configure on either side.
+    </Note>
+
+    Remember that `callback.html` must be served from the **same origin** as `index.html`. If you serve `index.html` at `https://trips.citymetro.example`, then `https://trips.citymetro.example/callback.html` is the redirect URI to register. Serving the two files from different origins or different ports will break the OAuth callback.
   </Step>
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+## What Happens at Startup
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
-</Tip>
+Understanding the boot sequence helps when debugging:
+
+1. The browser fetches `index.html` and parses the single `<div id="app">` shell.
+2. `<script type="module" src="js/app.js">` triggers ES module loading. The browser fetches and evaluates all imported modules in dependency order.
+3. `mountShell($('#app'))` injects the header, `<main>`, bottom nav, scrim, and drawer into the DOM.
+4. `startRouter()` reads the current URL hash and calls the matching view renderer from the `VIEWS` map.
+5. The active view renders into `<main id="main">`. On every subsequent hash change, the router clones `<main>` (dropping stale event listeners), calls the new view, and scrolls to the top.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Document every field in `AUTH` and `LINKS` and register the redirect URI on your provider.
+  </Card>
+  <Card title="Authentication Overview" icon="lock" href="/auth/overview">
+    Dive into the full PKCE flow, session storage, and sign-out behaviour.
+  </Card>
+</CardGroup>

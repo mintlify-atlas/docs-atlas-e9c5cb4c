@@ -1,0 +1,242 @@
+---
+title: "Demo Data: Sample Network for Development and Testing"
+sidebarTitle: "Demo Data"
+description: "How demo-data.js powers the app without a backend: 20 stops, 5 lines, 7 landmarks, 3 alerts, and sample shortcuts — plus how to replace it all."
+---
+
+`js/demo-data.js` is the single source of truth for the fictional City Metro transit network that ships with the app. It exports a fully self-contained set of stops, lines, walk connections, landmarks, and service alerts so every screen can be designed, tested, and demonstrated without any backend connectivity. The module deliberately contains only plain data — no logic. All routing, scheduling, and alert-matching live exclusively in `js/trip-service.js`, which is the only file that imports from `demo-data.js`. Nothing in the view layer ever touches `demo-data.js` directly.
+
+<Tip>
+  When you are ready to connect a live data source, see [Replacing Demo Data with Live Data](/deployment/real-data). You only need to replace `trip-service.js` (and optionally `demo-data.js`) — every view stays identical because views depend solely on the `trip-service.js` API contract.
+</Tip>
+
+---
+
+## `DEMO_NOTICE`
+
+A string constant displayed as a banner on all screens while the app is running on demo data.
+
+```js title="js/demo-data.js"
+export const DEMO_NOTICE = 'Demonstration data — not real service information.';
+```
+
+The shell reads this value to render the yellow notice bar at the top of every view, reminding developers and testers that no real schedules are in use.
+
+---
+
+## `STOPS`
+
+Twenty stops make up the demo network. Each stop has a short `id`, a `name`, and `x`/`y` coordinates that place it on the schematic map canvas (arbitrary pixel units — not geographic coordinates). Two stops carry optional flags: four are marked `hub: true` (major interchanges returned first by the autocomplete when a query is blank) and one is marked `noService: true`.
+
+<Note>
+  The `harbor` stop has `noService: true`. The router will never find a path through Harbor Annex, so searching for a trip to or from it always returns zero results. This intentionally exercises the empty-state UI so it can be styled and tested.
+</Note>
+
+<Accordion title="All 20 stops">
+
+| ID | Name | x | y | Flags |
+|---|---|---|---|---|
+| `santa` | Santa Mooica | 60 | 120 | — |
+| `asian` | Asian Town | 170 | 110 | — |
+| `union` | Union Station | 290 | 150 | `hub` |
+| `downtown` | Downtown Lego City | 420 | 150 | `hub` |
+| `emerg` | Emergency HQ | 540 | 190 | — |
+| `wwestern` | William/Western | 650 | 220 | — |
+| `museum` | Museum | 290 | 50 | — |
+| `stadium` | Stadium | 290 | 260 | — |
+| `deathstar` | Death Star City | 300 | 370 | `hub` |
+| `airport` | Airport Metro Transit Center | 440 | 410 | `hub` |
+| `flx` | FLX T2 | 480 | 280 | — |
+| `desktop` | Desktop Hills | 570 | 440 | — |
+| `tablec` | Table Central | 680 | 410 | — |
+| `nhollywood` | North Hollowwood | 735 | 330 | — |
+| `market` | Market Street | 235 | 215 | — |
+| `oakpark` | Oak Park | 185 | 310 | — |
+| `lakeview` | Lakeview | 120 | 430 | — |
+| `couch` | Couch Chair Park | 255 | 395 | — |
+| `dine` | Dine Park | 215 | 350 | — |
+| `harbor` | Harbor Annex | 700 | 90 | `noService` |
+
+</Accordion>
+
+---
+
+## `LINES`
+
+Five lines connect the 19 service stops. The timetable engine in `trip-service.js` uses each line's `headway`, `offset`, and `hop` to compute exact departure times on the fly — no static schedule table is needed.
+
+<CardGroup cols={2}>
+  <Card title="A Line" icon="train-subway">
+    **Type:** Rail · **Color:** `#0b6fba` (blue) · **Text:** `#ffffff`
+
+    **Headway:** 10 min · **Offset:** 3 min · **Hop:** 3 min/stop
+
+    **Route:** Santa Mooica → Asian Town → Union Station → Downtown Lego City → Emergency HQ → William/Western
+  </Card>
+  <Card title="B Line" icon="train-subway">
+    **Type:** Rail · **Color:** `#d6181f` (red) · **Text:** `#ffffff`
+
+    **Headway:** 12 min · **Offset:** 7 min · **Hop:** 3 min/stop
+
+    **Route:** Museum → Union Station → Stadium → Death Star City → Airport Metro Transit Center
+  </Card>
+  <Card title="E Line" icon="train-subway">
+    **Type:** Rail · **Color:** `#f1ae1b` (yellow) · **Text:** `#111111`
+
+    **Headway:** 15 min · **Offset:** 1 min · **Hop:** 4 min/stop
+
+    **Route:** Downtown Lego City → FLX T2 → Airport Metro Transit Center → Desktop Hills → Table Central → North Hollowwood
+  </Card>
+  <Card title="Route 111" icon="bus">
+    **Type:** Bus · **Color:** `#e8590c` (orange) · **Text:** `#ffffff`
+
+    **Headway:** 15 min · **Offset:** 5 min · **Hop:** 4 min/stop
+
+    **Route:** Union Station → Market Street → Oak Park → Lakeview
+  </Card>
+  <Card title="Route 38" icon="bus">
+    **Type:** Bus · **Color:** `#7c3aed` (purple) · **Text:** `#ffffff`
+
+    **Headway:** 20 min · **Offset:** 9 min · **Hop:** 4 min/stop
+
+    **Route:** Death Star City → Couch Chair Park → Dine Park → Oak Park → Lakeview
+  </Card>
+</CardGroup>
+
+<Info>
+  The router traverses each `stops` array in both directions, so every line is bidirectional. To change frequency or add a stop, update the relevant object in `LINES` — the timetable recalculates automatically.
+</Info>
+
+---
+
+## `WALKS`
+
+Three short pedestrian connections link pairs of stops that are geographically close but on different lines. The router is allowed to use at most one `WALKS` entry per trip and will never walk between the same pair twice.
+
+| Origin | Destination | Walk time |
+|---|---|---|
+| `market` (Market Street) | `downtown` (Downtown Lego City) | 6 min |
+| `emerg` (Emergency HQ) | `flx` (FLX T2) | 5 min |
+| `couch` (Couch Chair Park) | `stadium` (Stadium) | 8 min |
+
+These connections are defined as undirected pairs — the router can walk in either direction along each link.
+
+```js title="js/demo-data.js"
+export const WALKS = [
+  { a: 'market', b: 'downtown', min: 6 },
+  { a: 'emerg',  b: 'flx',     min: 5 },
+  { a: 'couch',  b: 'stadium', min: 8 }
+];
+```
+
+---
+
+## `LANDMARKS`
+
+Seven named points of interest are searchable alongside stops. Each landmark resolves to a nearby stop (`stopId`) and carries a `walkMin` value so the router can account for the first-mile or last-mile walk. Landmarks appear in autocomplete results with `kind: 'landmark'` and are merged into the `PLACES` array inside `trip-service.js` at startup.
+
+| ID | Name | Nearest stop | Walk (min) |
+|---|---|---|---|
+| `cityhall` | Lego City Hall | `downtown` | 4 |
+| `pier` | Santa Mooica Pier | `santa` | 6 |
+| `tours` | Death Star Tours | `deathstar` | 5 |
+| `foodhall` | Union Station Food Hall | `union` | 2 |
+| `lakepark` | Lakeview Park | `lakeview` | 7 |
+| `terminal1` | Airport Terminal 1 | `airport` | 5 |
+| `stadiumc` | Stadium Gate C | `stadium` | 4 |
+
+```js title="js/demo-data.js"
+export const LANDMARKS = [
+  { id: 'cityhall',  name: 'Lego City Hall',          stopId: 'downtown',  walkMin: 4 },
+  { id: 'pier',      name: 'Santa Mooica Pier',        stopId: 'santa',     walkMin: 6 },
+  { id: 'tours',     name: 'Death Star Tours',         stopId: 'deathstar', walkMin: 5 },
+  { id: 'foodhall',  name: 'Union Station Food Hall',  stopId: 'union',     walkMin: 2 },
+  { id: 'lakepark',  name: 'Lakeview Park',            stopId: 'lakeview',  walkMin: 7 },
+  { id: 'terminal1', name: 'Airport Terminal 1',       stopId: 'airport',   walkMin: 5 },
+  { id: 'stadiumc',  name: 'Stadium Gate C',           stopId: 'stadium',   walkMin: 4 }
+];
+```
+
+---
+
+## `ALERTS`
+
+Three sample service alerts cover the main alert severity levels and the different ways alerts can be associated with lines versus individual stops.
+
+<Accordion title="a1 — Weekend work on A Line (warning)">
+  **Severity:** `warning` · **Lines:** `['A']` · **Stops:** `[]` · **Published:** 38 min ago
+
+  **Title:** Weekend work on A Line
+
+  **Body:** Expect delays between Union Station and Downtown Lego City while track work is finished.
+
+  This alert is line-scoped. Any trip that uses the A Line will surface it via `alertsForTrip()`.
+</Accordion>
+
+<Accordion title="a2 — Route 38 detour near Oak Park (info)">
+  **Severity:** `info` · **Lines:** `['38']` · **Stops:** `[]` · **Published:** 140 min ago
+
+  **Title:** Route 38 detour near Oak Park
+
+  **Body:** Buses use Market Street while a water main is repaired. Allow a few extra minutes.
+
+  This alert is line-scoped. Any trip that uses Route 38 will surface it.
+</Accordion>
+
+<Accordion title="a3 — Elevator maintenance at Stadium (info)">
+  **Severity:** `info` · **Lines:** `[]` · **Stops:** `['stadium']` · **Published:** 1500 min ago
+
+  **Title:** Elevator maintenance at Stadium
+
+  **Body:** The street-level elevator is out of service. Use the escalators or the Gate C entrance.
+
+  This alert is stop-scoped. Any trip whose `steps` pass through the `stadium` stop — as a boarding stop, alighting stop, or intermediate via stop — will surface it.
+</Accordion>
+
+<Warning>
+  `minsAgo` values are static demo figures baked into the file. They do not update as time passes. In a production integration, replace this field with a real ISO 8601 timestamp and compute the display age at render time.
+</Warning>
+
+---
+
+## `SAMPLE_RECENTS`
+
+Three example recent-search entries are pre-populated on the home screen before the user runs any real searches. Each entry is a compact object that mirrors the shape of a saved `FindTripsQuery`.
+
+```js title="js/demo-data.js"
+export const SAMPLE_RECENTS = [
+  { o: 'union',    d: 'airport',  mode: 'now' },
+  { o: 'santa',    d: 'lakeview', mode: 'depart', t: '08:15' },
+  { o: 'cityhall', d: 'tours',    mode: 'arrive', t: '18:30' }
+];
+```
+
+| `o` (origin) | `d` (destination) | `mode` | `t` |
+|---|---|---|---|
+| `union` | `airport` | `now` | — |
+| `santa` | `lakeview` | `depart` | `08:15` |
+| `cityhall` | `tours` | `arrive` | `18:30` |
+
+---
+
+## `SAMPLE_SAVED`
+
+Three pre-populated saved places are shown on the home screen under the "Saved" section before the user adds their own. Each entry maps a human label to a landmark or stop `id`.
+
+```js title="js/demo-data.js"
+export const SAMPLE_SAVED = [
+  { label: 'Home',    placeId: 'lakepark'  },
+  { label: 'Work',    placeId: 'cityhall'  },
+  { label: 'Airport', placeId: 'terminal1' }
+];
+```
+
+| Label | `placeId` | Resolves to |
+|---|---|---|
+| Home | `lakepark` | Lakeview Park (landmark → `lakeview` stop) |
+| Work | `cityhall` | Lego City Hall (landmark → `downtown` stop) |
+| Airport | `terminal1` | Airport Terminal 1 (landmark → `airport` stop) |
+
+<Note>
+  Both `SAMPLE_RECENTS` and `SAMPLE_SAVED` are display-only seed data. Once a real persistence layer (local storage, a user profile API, or similar) is in place, replace them with live data fetched at session start. The home-screen view reads these arrays only as fallbacks.
+</Note>

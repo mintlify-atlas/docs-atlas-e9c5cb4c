@@ -1,0 +1,91 @@
+---
+title: "City Metro Trip-Planner: Plan Transit Trips in the Browser"
+sidebarTitle: "Introduction"
+description: "A mobile-first SPA built on plain HTML and vanilla JS ES modules — no build step — with demo-data mode for instant exploration and real-data mode for live service."
+---
+
+City Metro Trip-Planner is a mobile-first single-page web application that lets riders plan multi-leg rail and bus journeys, receive real-time service alerts, explore an interactive schematic transit map, and authenticate with a City Metro transit account — all from any modern browser, with no native app installation required. The entire application is delivered as a single `index.html` with vanilla JavaScript ES modules; there is no bundler, no framework, and no build step. A demo-data mode ships with realistic fictional stops, lines, and alerts so developers and designers can explore every screen immediately after cloning the repository.
+
+## What the App Does
+
+City Metro Trip-Planner covers the four workflows a rider needs every day:
+
+<CardGroup cols={2}>
+  <Card title="Trip Planning" icon="route">
+    Search stops and landmarks, choose depart-now, depart-at, or arrive-by, and receive ranked multi-leg itineraries that may include rail transfers, bus legs, and walking segments.
+  </Card>
+  <Card title="Service Alerts" icon="bell">
+    Browse all active alerts or see only the alerts relevant to a specific itinerary. Alerts carry severity levels (`warning` or `info`) and are linked to affected lines and stops.
+  </Card>
+  <Card title="Transit Map" icon="map">
+    A schematic SVG map renders every line and stop from the same data that powers the trip planner, keeping the map and routes automatically in sync.
+  </Card>
+  <Card title="Transit Account" icon="user">
+    Riders can sign in with their City Metro transit account via OAuth 2.0 / OpenID Connect using the Authorization Code flow with PKCE. No client secret is ever used or stored.
+  </Card>
+</CardGroup>
+
+## Architecture
+
+The app is a **hash-router SPA** with no server-side rendering and no client-side framework. Navigation happens entirely through URL hash changes (`#/`, `#/results`, etc.), which means the server only ever needs to serve one file — `index.html`. JavaScript is loaded as native ES modules over HTTP; no transpilation or bundling is required.
+
+```
+index.html          ← app shell, single <div id="app">
+js/app.js           ← entry point: mounts shell, starts hash router
+js/components/      ← shell, icons, UI helpers
+js/views/           ← one module per screen
+js/auth/oauth.js    ← PKCE OAuth implementation
+js/config.js        ← AUTH and LINKS configuration objects
+css/app.css         ← complete design system (custom properties, BEM-ish)
+callback.html       ← OAuth redirect landing page
+```
+
+### The Eight Views
+
+Every screen is registered in the `VIEWS` map in `js/app.js`. The router replaces the contents of `<main id="main">` on each navigation, dropping the previous screen's event listeners by cloning the element before rendering.
+
+| Route | View module | Default title |
+|---|---|---|
+| `#/` | `renderHome` | Plan your trip |
+| `#/results` | `renderResults` | Trips |
+| `#/trip` | `renderItinerary` | Your trip |
+| `#/transit` | `renderTransit` | Transit |
+| `#/map` | `renderMap` | Map |
+| `#/alerts` | `renderAlerts` | Alerts |
+| `#/account` | `renderAccount` | Account |
+| `#/signin` | `renderSignIn` | Sign in |
+
+## Demo-Data Mode vs. Real-Data Mode
+
+Out of the box the app runs entirely on the static fixtures in `js/demo-data.js`. This file exports `STOPS`, `LINES`, `WALKS`, `LANDMARKS`, `ALERTS`, `SAMPLE_RECENTS`, and `SAMPLE_SAVED`. The trip-planning engine (`js/trip-service.js`) reads these exports, so every screen is fully functional without a back-end API.
+
+<Info>
+  A prominent **"Demonstration data — not real service information"** notice is displayed in the menu drawer and on every trip result while demo data is in use. This is intentional — riders will never mistake demonstration content for live schedules.
+</Info>
+
+When you are ready to connect real data, replace `js/demo-data.js` and `js/trip-service.js` with modules that call your own API. The view layer does not import `demo-data.js` directly, so the boundary is clean.
+
+## Key Design Principles
+
+**Mobile-first layout.** The design system in `css/app.css` is built with a mobile viewport as the baseline. A compact header, a five-item bottom navigation bar, and a slide-in menu drawer are the primary navigation surfaces on small screens. A top navigation bar appears at ≥ 900 px.
+
+**Accessibility.** The shell includes a skip-to-content link (`<a class="skip" href="#main">`), ARIA live regions for screen-reader announcements (`#live`) and visible toasts (`#toast`), `aria-current="page"` on the active navigation item, focus trapping inside the open menu drawer, and focus management on every route change.
+
+**No frameworks, no build step.** Every file the browser loads is exactly the file that lives in the repository. This makes the app trivially deployable to any static host — a GitHub Pages site, an S3 bucket, or an Nginx container — with no CI pipeline required.
+
+## Where to Go Next
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Serve the app locally in under two minutes and explore every screen in demo mode.
+  </Card>
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Set up the `AUTH` and `LINKS` objects in `js/config.js` before going live.
+  </Card>
+  <Card title="Authentication" icon="lock" href="/auth/overview">
+    Understand the full PKCE flow, session storage model, and sign-out options.
+  </Card>
+  <Card title="Deployment" icon="cloud" href="/deployment/real-data">
+    Connect real transit data and deploy to a production static host.
+  </Card>
+</CardGroup>

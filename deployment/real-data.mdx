@@ -1,0 +1,260 @@
+---
+title: "Connect a Live Trip-Planning Backend to Trip-Planner"
+sidebarTitle: "Real Data"
+description: "Replace the demo engine in trip-service.js and demo-data.js with calls to your GTFS or REST API while preserving the exact function contracts the UI depends on."
+---
+
+City Metro Trip-Planner was built so that all data concerns live behind a single module boundary. The views — trip planner, alerts, transit map, account — import **only** from `js/trip-service.js`. They never reach into `js/demo-data.js` themselves. This means connecting a real backend is a contained task: keep every export that `trip-service.js` currently advertises, replace what happens inside the functions, and the UI continues to work without modification.
+
+<Warning>
+  The `enumeratePaths` + `simulate` engine inside `trip-service.js` is built specifically for the small sample network in `demo-data.js`. It does not scale to a real transit network. **Replace the body of `findTrips()` entirely** rather than trying to adapt the demo engine to production data.
+</Warning>
+
+## The module contract
+
+`trip-service.js` is the **only** file the views import data from. As long as every export listed below keeps its name and return shape, you can replace the implementation details freely.
+
+### Primary data exports (required by views)
+
+<Tabs>
+  <Tab title="searchPlaces">
+    ```ts
+    searchPlaces(query: string, limit?: number): Place[]
+    ```
+
+    Returns an array of `Place` objects matching the free-text `query`, best match first. Called on every keystroke in the origin/destination autocomplete fields.
+
+    **`Place` shape:**
+
+    ```ts
+    {
+      id: string;       // unique place identifier
+      name: string;     // display name shown in the autocomplete list
+      kind: 'stop' | 'landmark' | 'location';
+      stopId: string;   // the stop this place boards/alights at
+      walkMin: number;  // minutes to walk from the stop to this place (0 for stops themselves)
+    }
+    ```
+
+    When `query` is empty, the current demo implementation returns hub stops. Your implementation might return the user's saved places or recent searches instead.
+  </Tab>
+  <Tab title="getPlace">
+    ```ts
+    getPlace(id: string): Place | null
+    ```
+
+    Returns the `Place` for the given ID, or `null` if not found. Used to hydrate saved searches and deeplinks from IDs stored in state.
+  </Tab>
+  <Tab title="findTrips">
+    ```ts
+    findTrips(query: FindTripsQuery): Promise<{ trips: Trip[] }>
+    ```
+
+    The main trip-search function. Resolves with an array of `Trip` objects (empty array if no trips are found), or rejects with an `Error` on failure.
+
+    **`FindTripsQuery` shape:**
+
+    ```ts
+    {
+      originId: string;               // Place ID for the origin
+      destId:   string;               // Place ID for the destination
+      mode:     'now' | 'depart' | 'arrive';
+      whenMs:   number;               // epoch milliseconds; for 'now' pass Date.now()
+    }
+    ```
+
+    **`Trip` shape (simplified):**
+
+    ```ts
+    {
+      id: number;
+      depart:    number;   // epoch ms
+      arrive:    number;   // epoch ms
+      duration:  number;   // minutes
+      transfers: number;
+      rides:     number;
+      walkMin:   number;
+      lineIds:   string[];
+      boardingStop: string;
+      alightStop:   string;
+      tags:      string[]; // e.g. ['Fastest', 'Least walking']
+      steps:     TripStep[];
+      chain:     ChainSegment[];
+    }
+    ```
+  </Tab>
+  <Tab title="alertsForTrip">
+    ```ts
+    alertsForTrip(trip: Trip): Alert[]
+    ```
+
+    Given a `Trip` returned by `findTrips`, returns all service alerts that affect any line or stop on that trip. The alerts view and the trip results card both call this.
+
+    **`Alert` shape:**
+
+    ```ts
+    {
+      id:       string;
+      severity: 'warning' | 'info';
+      lines:    string[];  // affected line IDs
+      stops:    string[];  // affected stop IDs
+      minsAgo:  number;    // age of the alert in minutes (for display only)
+      title:    string;
+      body:     string;
+    }
+    ```
+  </Tab>
+</Tabs>
+
+### Supporting exports (also required)
+
+These are used throughout the map, transit lines, and alerts views. Keep them alongside the primary four:
+
+| Export | Signature | Used by |
+|---|---|---|
+| `allAlerts()` | `() => Alert[]` | Alerts view — full list |
+| `allLines()` | `() => Line[]` | Transit map, lines view |
+| `allStops()` | `() => Stop[]` | Transit map |
+| `getLine(id)` | `(id: string) => Line \| null` | Trip itinerary — line badge rendering |
+| `getStop(id)` | `(id: string) => Stop \| null` | Trip itinerary — stop name lookup |
+| `linesAtStop(stopId)` | `(stopId: string) => Line[]` | Stop detail — which lines serve a stop |
+| `MY_LOCATION` | `Place` constant | Autocomplete — "My location" pseudo-place |
+
+## Migration steps
+
+<Steps>
+  <Step title="Replace the static data in demo-data.js">
+    `demo-data.js` exports `STOPS`, `LINES`, `LANDMARKS`, `ALERTS`, `WALKS`, and the demo notice constant `DEMO_NOTICE`. Replace these arrays with your real data, or import them from your own source module.
+
+    A `Stop` needs at minimum:
+
+    ```ts
+    { id: string; name: string; hub?: boolean; x?: number; y?: number; }
+    ```
+
+    A `Line` needs:
+
+    ```ts
+    {
+      id: string; name: string; type: 'rail' | 'bus';
+      color: string; textColor: string;
+      stops: string[]; // ordered stop IDs
+    }
+    ```
+
+    The `x`/`y` coordinates on stops are only used by the schematic SVG map. If you replace the map with a real tile or vector map, you can omit them.
+  </Step>
+
+  <Step title="Implement findTrips() against your real API">
+    Replace the `enumeratePaths` + `simulate` logic with a fetch to your trip-planning backend (GTFS-RT, OpenTripPlanner, custom REST endpoint, etc.). The function must return a `Promise` that resolves to `{ trips: Trip[] }` using the shape described above.
+
+    ```js title="js/trip-service.js — findTrips() stub"
+    export async function findTrips(query) {
+      const { originId, destId, mode, whenMs } = query;
+      const res = await fetch(
+        `https://api.citymetro.example/trips` +
+        `?from=${originId}&to=${destId}&mode=${mode}&when=${whenMs}`
+      );
+      if (!res.ok) throw new Error(`Trip API error: ${res.status}`);
+      const data = await res.json();
+      // Map data.trips to the Trip shape expected by the views
+      return { trips: data.trips.map(normalizeTrip) };
+    }
+    ```
+
+    During development, call `setLatency(0)` to skip the artificial delay, or `setLatency(2000)` to simulate a slow network and verify the loading skeleton renders correctly.
+  </Step>
+
+  <Step title="Implement searchPlaces() against your autocomplete endpoint">
+    Replace the scored in-memory scan with a call to your geocoder or stop-search API. Return an array of `Place` objects.
+
+    ```js title="js/trip-service.js — searchPlaces() stub"
+    export async function searchPlaces(query, limit = 6) {
+      if (!query.trim()) return getHubStops(limit); // fallback
+      const res = await fetch(
+        `https://api.citymetro.example/places/search` +
+        `?q=${encodeURIComponent(query)}&limit=${limit}`
+      );
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.places.map(normalizePlace);
+    }
+    ```
+  </Step>
+
+  <Step title="Update MY_LOCATION to your service area">
+    `MY_LOCATION` is the "My location" pseudo-place that appears as the first autocomplete suggestion. It currently maps to the `union` stop. Point it to a real stop near the geographic center of your network, or implement it as a runtime lookup using the browser Geolocation API.
+
+    ```js title="js/trip-service.js"
+    // Static fallback: nearest hub stop to your city center
+    export const MY_LOCATION = {
+      id: 'my-location',
+      name: 'My location',
+      kind: 'location',
+      stopId: 'your-central-stop-id',
+      walkMin: 0
+    };
+    ```
+  </Step>
+
+  <Step title="Remove or replace the demo notice">
+    The `DEMO_NOTICE` string exported from `demo-data.js` is displayed in a `.demo-note` element inside the trip-planner view. Once you are serving real data, remove the `DEMO_NOTICE` export (or set it to `''`) and remove any UI callout that references it so riders are not confused by a "demonstration data" disclaimer on a live service.
+  </Step>
+</Steps>
+
+## Using setLatency() in development
+
+`trip-service.js` exports a `setLatency(ms)` function that controls how long `findTrips()` waits before resolving. The default is `450` ms, which simulates a realistic API round-trip and ensures the loading skeleton is always visible during development.
+
+```js
+import { setLatency } from './js/trip-service.js';
+
+// Speed up during unit tests
+setLatency(0);
+
+// Simulate a slow connection to verify skeleton and timeout states
+setLatency(3000);
+```
+
+Once you replace `findTrips()` with a real `fetch`, the `sleep(latencyMs)` call at the top of the function can be removed. Keep `setLatency` exported so tests can still call it to control any simulated delay you add.
+
+<Tip>
+  Keep `demo-data.js` around as a fallback or offline mode. You can import from it conditionally — for example, returning demo trips when `navigator.onLine` is false or when the real API responds with a non-200 status — so riders still see something useful when the backend is unreachable.
+</Tip>
+
+## findTrips query and response reference
+
+```js title="FindTripsQuery — full shape"
+const query = {
+  originId: 'union',     // Place ID (matches a key in STOPS or LANDMARKS)
+  destId:   'airport',   // Place ID
+  mode:     'now',       // 'now' | 'depart' | 'arrive'
+  whenMs:   Date.now()   // epoch milliseconds
+};
+```
+
+```js title="findTrips response — { trips: Trip[] }"
+{
+  trips: [
+    {
+      id: 0,
+      depart:       1713600000000,   // epoch ms
+      arrive:       1713602700000,   // epoch ms
+      duration:     45,              // minutes
+      transfers:    1,
+      rides:        2,
+      walkMin:      7,
+      lineIds:      ['B', 'E'],
+      boardingStop: 'Union Station',
+      alightStop:   'Airport Metro Transit Center',
+      tags:         ['Fastest'],
+      steps: [
+        // TripStep objects — one per wait / board / ride / walk / transfer / arrive
+      ],
+      chain: [
+        // ChainSegment objects — compact summary for the results card bubble chain
+      ]
+    }
+  ]
+}
+```
