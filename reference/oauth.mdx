@@ -1,5 +1,5 @@
 ---
-title: "oauth.js — PKCE OAuth 2.0 Module API Reference"
+title: "oauth.js — PKCE OAuth 2.0 / OIDC Module API Reference"
 sidebarTitle: "oauth.js"
 description: "Complete API reference for oauth.js: beginLogin, completeLogin, getSession, signOut, signOutEverywhere, discover, OAuthError, and every supporting export."
 ---
@@ -151,7 +151,7 @@ Returns `true` when both `AUTH.issuer` and `AUTH.clientId` are present and valid
 
 ### `safeReturn(r)`
 
-Validates that `r` is a safe in-app hash route (matching `#/<path>`) to prevent open-redirect attacks. Returns `r` unchanged if it matches, or `'#/account'` as a safe fallback.
+Validates that `r` is a safe in-app hash route to prevent open-redirect attacks. The accepted pattern is `/^#\/(?!\/)\S*$/` — the string must start with `#/`, the second character must not be another `/`, and the remainder must contain no whitespace. Returns `r` unchanged if it matches, or `'#/account'` as a safe fallback.
 
 <ParamField path="r" type="string" required>
   A candidate `returnTo` value, typically sourced from user input or query parameters.
@@ -381,7 +381,7 @@ if (notice) {
 Signs out of Trip-Planner only. Removes `cm_tp_session` and `cm_tp_oauth` from `sessionStorage`. The user's City Metro transit account at the provider remains active.
 
 ```js
-import { signOut, notifyAuthChange } from './js/oauth.js';
+import { signOut } from './js/oauth.js';
 import { notifyAuthChange } from './js/shell.js';
 
 signOut();

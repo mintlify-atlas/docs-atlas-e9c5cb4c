@@ -170,22 +170,25 @@ A **Step** is one discrete action inside a `Trip.steps` array. Every step has a 
 
 <Tabs>
   <Tab title="walk / walk-final">
-    `walk` is used for the initial walk from the origin to a stop. `walk-final` is used for the last-mile walk from the final stop to the destination. Both carry identical fields.
+    `walk` covers two distinct cases: an initial first-mile walk from the origin to the first stop, and a mid-trip walking transfer between two nearby stops on different lines (indicated by a `transfer: true` flag). `walk-final` is used exclusively for the last-mile walk from the final alighting stop to the destination.
 
     <ResponseField name="type" type="'walk' | 'walk-final'" required>
-      Discriminator. `walk` for first-mile; `walk-final` for last-mile.
+      Discriminator. `walk` for first-mile walks and mid-trip walking transfers; `walk-final` for last-mile walks.
+    </ResponseField>
+    <ResponseField name="transfer" type="boolean">
+      Present and `true` only when `type` is `'walk'` and the step is a mid-trip walking transfer between two stops (not the initial first-mile walk from the origin). Absent on first-mile and last-mile steps.
     </ResponseField>
     <ResponseField name="title" type="string" required>
-      e.g. `Walk to Union Station` or `Walk to Lego City Hall`.
+      e.g. `Walk to Union Station` (first-mile or transfer) or `Walk to Lego City Hall` (last-mile).
     </ResponseField>
     <ResponseField name="detail" type="string" required>
-      e.g. `From My location` or `From Airport Metro Transit Center`.
+      For first-mile walks: the origin's display name, e.g. `From My location`. For mid-trip walking transfers: the fixed string `Transfer on foot`. For last-mile walks: the departing stop's name, e.g. `From Airport Metro Transit Center`.
     </ResponseField>
     <ResponseField name="start" type="number" required>Epoch milliseconds when the walk begins.</ResponseField>
     <ResponseField name="end" type="number" required>Epoch milliseconds when the walk ends.</ResponseField>
     <ResponseField name="minutes" type="number" required>Duration of the walk in minutes.</ResponseField>
     <ResponseField name="stopId" type="string" required>
-      For `walk`: the stop being walked *to*. For `walk-final`: the stop being walked *from*.
+      For `walk` (first-mile or mid-trip transfer): the stop being walked *to*. For `walk-final`: the stop being walked *from*.
     </ResponseField>
   </Tab>
 
@@ -193,7 +196,7 @@ A **Step** is one discrete action inside a `Trip.steps` array. Every step has a 
     A platform-level transfer between two transit lines at the same stop. The router inserts a fixed 2-minute transfer penalty (`TRANSFER_MIN = 2`) before each subsequent boarding.
 
     <ResponseField name="type" type="'transfer'" required>Discriminator.</ResponseField>
-    <ResponseField name="lineId" type="string" required>ID of the *incoming* line being transferred to.</ResponseField>
+    <ResponseField name="lineId" type="string" required>ID of the line being boarded after this transfer — the next line in the itinerary, not the one just ridden.</ResponseField>
     <ResponseField name="title" type="string" required>e.g. `Transfer to B Line`.</ResponseField>
     <ResponseField name="detail" type="string" required>e.g. `at Union Station`.</ResponseField>
     <ResponseField name="start" type="number" required>Epoch milliseconds when the transfer begins.</ResponseField>

@@ -1,23 +1,23 @@
 ---
-title: "Deploy City Metro Trip-Planner on Any Static Host"
+title: "Deploy City Metro Trip-Planner to Any Static Host"
 sidebarTitle: "Hosting"
-description: "Serve the app's static files on any host with HTTPS, register callback.html as your OAuth redirect URI, and rely on hash-based routing with no server rewrites needed."
+description: "Copy five static directories to any HTTPS host, register callback.html as your OAuth redirect URI, and use hash routing with no server rewrites required."
 ---
 
-City Metro Trip-Planner is a pure static web application. The entire deployable artifact is a flat folder of files — `index.html`, `callback.html`, `css/app.css`, the `js/` module tree, and the `img/` assets. There is no server-side runtime, no build step, and no package manager to run. Copy the folder to any host that can serve static files over HTTPS and the app is live.
+City Metro Trip-Planner is a pure static web application. The entire deployable artifact is a flat folder of files — `index.html`, `callback.html`, `css/`, `js/`, and `img/`. There is no server-side runtime, no build step, and no package manager to run. Copy the folder to any host that can serve static files over HTTPS and the app is live.
 
 ## How routing works
 
 The SPA uses **hash-based routing** (`#/`, `#/results`, `#/alerts`, `#/map`, `#/account`). Because the fragment is never sent to the server, every deep link resolves to `index.html` without any URL-rewrite or `_redirects` configuration. This is what makes the app portable to every static host including GitHub Pages, plain Nginx, and object-storage buckets.
 
 <Note>
-  `callback.html` **must be served from the same origin** as `index.html` (identical scheme, host, and port). The OAuth flow posts the authorization code to `callback.html`, and `callback.html` in turn uses `postMessage` to hand the result back to the opener in `index.html`. A cross-origin mismatch will silently fail.
+  `callback.html` **must be served from the same origin** as `index.html` (identical scheme, host, and port). After the OAuth provider redirects the browser to `callback.html`, that page completes the PKCE exchange and redirects back into the app via `location.replace()`. A cross-origin mismatch will cause `sessionStorage` lookups to fail and the sign-in flow will not complete.
 </Note>
 
 ## HTTPS requirement
 
 <Warning>
-  **Always serve the app over HTTPS in production.** OAuth 2.0 providers refuse to redirect to plain `http://` redirect URIs. Browsers also restrict access to `sessionStorage` — where PKCE verifiers are stored during the sign-in flow — when loaded via `file://`. Always use a local HTTP server during development rather than opening `index.html` directly from disk.
+  **Always serve the app over HTTPS in production.** OAuth 2.0 providers refuse to redirect to plain `http://` redirect URIs. Browsers also restrict `sessionStorage` — where PKCE verifiers are stored during the sign-in flow — when the page is loaded via `file://`, because each navigation creates a fresh opaque origin and loses the verifier. Always use a local HTTP server during development rather than opening `index.html` directly from disk.
 </Warning>
 
 The two HTTPS-related consequences for deployment are:

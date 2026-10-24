@@ -1,7 +1,7 @@
 ---
-title: "Connect a Live Trip-Planning Backend to Trip-Planner"
+title: "Connect a Real Backend to City Metro Trip-Planner"
 sidebarTitle: "Real Data"
-description: "Replace the demo engine in trip-service.js and demo-data.js with calls to your GTFS or REST API while preserving the exact function contracts the UI depends on."
+description: "Replace the demo engine in trip-service.js and demo-data.js with your GTFS or REST API while keeping the exact function contracts the UI depends on."
 ---
 
 City Metro Trip-Planner was built so that all data concerns live behind a single module boundary. The views — trip planner, alerts, transit map, account — import **only** from `js/trip-service.js`. They never reach into `js/demo-data.js` themselves. This means connecting a real backend is a contained task: keep every export that `trip-service.js` currently advertises, replace what happens inside the functions, and the UI continues to work without modification.
@@ -22,7 +22,7 @@ City Metro Trip-Planner was built so that all data concerns live behind a single
     searchPlaces(query: string, limit?: number): Place[]
     ```
 
-    Returns an array of `Place` objects matching the free-text `query`, best match first. Called on every keystroke in the origin/destination autocomplete fields.
+    Returns an array of `Place` objects matching the free-text `query`, best match first. Called on every keystroke in the origin/destination autocomplete fields. Returns synchronously in the current demo implementation; your replacement may be synchronous or asynchronous.
 
     **`Place` shape:**
 
@@ -118,6 +118,8 @@ These are used throughout the map, transit lines, and alerts views. Keep them al
 | `getLine(id)` | `(id: string) => Line \| null` | Trip itinerary — line badge rendering |
 | `getStop(id)` | `(id: string) => Stop \| null` | Trip itinerary — stop name lookup |
 | `linesAtStop(stopId)` | `(stopId: string) => Line[]` | Stop detail — which lines serve a stop |
+| `alertsForLine(lineId)` | `(lineId: string) => Alert[]` | Line detail — alerts affecting a specific line |
+| `resolvePlaceName(text)` | `(text: string) => Place \| null` | Autocomplete — resolves a full typed name to a Place |
 | `MY_LOCATION` | `Place` constant | Autocomplete — "My location" pseudo-place |
 
 ## Migration steps

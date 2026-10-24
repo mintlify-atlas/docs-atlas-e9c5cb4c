@@ -17,13 +17,13 @@ Open `js/config.js` in any text editor, fill in the fields described below, and 
 The `AUTH` object configures the OpenID Connect / OAuth 2.0 sign-in flow. Provider endpoints (authorization, token, userinfo, end-session) are discovered automatically from `<issuer>/.well-known/openid-configuration` — they are never hard-coded.
 
 <ParamField path="AUTH.origin" type="string" required>
-  The base origin of the City Metro sign-in service. This value is **fixed** at `'https://auth.citymetro.xyz'` and must not be changed. It is used by `js/components/shell.js` to render the auth-origin hostname in the account chip and by `oauth.js` as the fallback account-settings URL.
+  The base origin of the City Metro sign-in service. This value is **fixed** at `'https://auth.citymetro.xyz'` and must not be changed. It is used by `js/components/shell.js` to render the auth-origin hostname in the header, by `js/views/signin.js` to display the sign-in service host, and by `js/views/account.js` as the fallback URL when `LINKS.accountSettings` is empty.
 </ParamField>
 
 <ParamField path="AUTH.issuer" type="string" required>
   The full OpenID Connect issuer URL for the Authentik application created for this app, **with a trailing slash**. The format is:
 
-  ```
+  ```text
   https://auth.citymetro.xyz/application/o/<APPLICATION_SLUG>/
   ```
 
@@ -37,7 +37,7 @@ The `AUTH` object configures the OpenID Connect / OAuth 2.0 sign-in flow. Provid
 <ParamField path="AUTH.redirectUri" type="string">
   The URI the provider sends the browser back to after a successful (or failed) authorization attempt. **Optional** — when left empty, `oauth.js` constructs the default value at runtime:
 
-  ```
+  ```text
   <window.location.origin>/callback.html
   ```
 

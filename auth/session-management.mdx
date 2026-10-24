@@ -4,7 +4,7 @@ sidebarTitle: "Session Management"
 description: "How getSession enforces expiry, the difference between signOut and signOutEverywhere, one-time notices, and the cm-auth event that keeps the UI in sync."
 ---
 
-After a rider signs in, the app stores the session in `sessionStorage` under the key `cm_tp_session`. Every part of the app that needs to know who is signed in — the header chip, the navigation drawer, the account page, API calls — reads session state through two exported functions: `getSession()` and `getAccessToken()`. Sign-out is available in two forms: a local-only variant and a global variant that terminates the session at the provider as well. All of these operations are coordinated through the `cm-auth` custom DOM event, which triggers a UI re-render whenever authentication state changes.
+After a rider signs in, the app stores the session in `sessionStorage` under the key `cm_tp_session`. Every part of the app that needs to know who is signed in — the header chip, the navigation drawer, the account page, API calls — reads session state through two exported functions: `getSession()` and `getAccessToken()`. Sign-out is available in two forms: a local-only variant and a global variant that terminates the session at the provider as well. All of these operations are coordinated through the `cm-auth` DOM event, which triggers a UI re-render whenever authentication state changes.
 
 ---
 
@@ -161,9 +161,9 @@ Trip-Planner offers two distinct sign-out operations with different scopes of ef
 
 ---
 
-## The cm-auth Custom Event
+## The cm-auth Event
 
-Any component that renders auth-dependent UI must react to sign-in and sign-out events without polling. The `cm-auth` custom DOM event handles this — it is dispatched on `window` by `notifyAuthChange()` after every state change.
+Any component that renders auth-dependent UI must react to sign-in and sign-out events without polling. The `cm-auth` DOM event handles this — it is dispatched on `window` by `notifyAuthChange()` after every state change.
 
 ```js title="js/shell.js — event definition and subscription"
 // Subscribe: re-render the header chip and navigation drawer on any auth change.
@@ -219,10 +219,14 @@ export function takeNotice(e) {
 |------|--------|----------------------------------|
 | `session_expired` | `getSession()` — on expiry detection | "Your session ended. Sign in again to continue." |
 | `cancelled` | `completeLogin()` — on `access_denied` from provider | "Sign-in was cancelled. You were not signed in." |
-| `state_mismatch` | `completeLogin()` — on CSRF check failure | "We couldn't verify that sign-in came from this device. Please start again." |
+| `provider_error` | `completeLogin()` — on any other provider error | The provider's own `error_description`, or "The sign-in service reported a problem." |
+| `no_flow` | `completeLogin()` — flow record missing or already used | "This sign-in link has expired or was already used. Please start again." |
 | `flow_expired` | `completeLogin()` — on 10-minute timeout | "That sign-in took too long. Please start again." |
+| `state_mismatch` | `completeLogin()` — on CSRF check failure | "We couldn't verify that sign-in came from this device. Please start again." |
+| `missing_code` | `completeLogin()` — provider redirected without a code | "The sign-in service did not return a sign-in code." |
 | `token_failed` | `completeLogin()` — on network error at token endpoint | "We couldn't reach the sign-in service to finish signing you in." |
 | `id_token_invalid` | `completeLogin()` — on claim validation failure | "The sign-in response could not be verified. Please try again." |
+| `unknown` | `callback.js` — unrecognised non-`OAuthError` exception | "Something went wrong while signing in. Please try again." |
 
 </Accordion>
 

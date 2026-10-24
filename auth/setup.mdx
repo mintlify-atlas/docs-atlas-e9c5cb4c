@@ -1,5 +1,5 @@
 ---
-title: "Set Up OAuth Sign-In for City Metro Trip-Planner"
+title: "Configure OAuth Sign-In for City Metro Trip-Planner"
 sidebarTitle: "Setup"
 description: "Create an Authentik OAuth 2.0 application, copy the issuer URL and Client ID into js/config.js, register the redirect URI, and activate sign-in for riders."
 ---
@@ -163,7 +163,7 @@ export function missingConfig(e) {
 }
 ```
 
-The `/<>/.test(c.issuer)` check catches the literal placeholder strings (`<APPLICATION_SLUG>`) so a copy-pasted-but-unedited config does not accidentally count as configured.
+The `/[<>]/.test(c.issuer)` check catches literal placeholder strings (such as `<APPLICATION_SLUG>`) so a copy-pasted-but-unedited config does not accidentally count as configured.
 
 ```js title="js/signin.js — button disabled state"
 const missing = missingConfig(), configured = missing.length === 0;

@@ -4,7 +4,7 @@ sidebarTitle: "Account"
 description: "View your City Metro profile and tab-scoped session expiry, link to account settings, and choose local or global sign-out from the Account screen."
 ---
 
-The Account screen at `/account` is the signed-in rider's control panel. It displays the profile retrieved during the OAuth 2.0 / PKCE sign-in flow, shows when the current browser-tab session expires, provides a link to the City Metro transit account management portal, and offers two distinct sign-out actions so riders can choose the right scope of sign-out for their situation. Visitors who are not signed in are redirected immediately to the Sign In screen rather than seeing an empty page.
+The Account screen at `/account` is the signed-in rider's control panel. It displays the profile retrieved during the OAuth 2.0 / PKCE sign-in flow, shows when the current browser-tab session expires, provides a link to the City Metro transit account management portal, and offers two distinct sign-out actions so riders can choose the right scope of sign-out for their situation. Visitors who are not signed in are shown the Sign In screen inline — rendered directly into the same `<main>` element with no redirect and no flash of empty content.
 
 ## Authentication Guard
 
@@ -99,14 +99,14 @@ Clears only the local session in this browser tab. The City Metro provider sessi
 
 ```js title="js/account.js"
 $('#signOutBtn').addEventListener('click', () => {
-  signOut();           // removes cm_tp_session and cm_tp_flow from sessionStorage
+  signOut();           // removes cm_tp_session and cm_tp_oauth from sessionStorage
   notifyAuthChange();  // fires 'cm-auth' event so the shell re-renders the header chip
   toast('You signed out of Trip-Planner.');
   navigate('/');
 });
 ```
 
-`signOut()` removes the `cm_tp_session` and `cm_tp_flow` keys from `sessionStorage`. Nothing is written to `localStorage` and no network request is made.
+`signOut()` removes the `cm_tp_session` and `cm_tp_oauth` keys from `sessionStorage`. Nothing is written to `localStorage` and no network request is made.
 
 ### Sign out of all City Metro services
 
@@ -155,5 +155,5 @@ If the provider is unreachable or does not advertise `end_session_endpoint`, the
 | Key | Contents | Cleared by |
 |-----|----------|-----------|
 | `cm_tp_session` | Serialised session object: user claims, tokens, `expiresAt` | `signOut()`, `signOutEverywhere()`, tab close |
-| `cm_tp_flow` | PKCE flow state: `state`, `verifier`, `nonce`, `returnTo` | `completeLogin()`, `signOut()`, tab close |
+| `cm_tp_oauth` | PKCE flow state: `state`, `verifier`, `nonce`, `returnTo` | `completeLogin()`, `signOut()`, tab close |
 | `cm_tp_notice` | One-time notice code and message for the sign-in screen | `takeNotice()` (consumed on read) |

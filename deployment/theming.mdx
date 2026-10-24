@@ -1,7 +1,7 @@
 ---
-title: "Customize the Look of City Metro Trip-Planner"
+title: "Customize the City Metro Trip-Planner Visual Style"
 sidebarTitle: "Theming"
-description: "Edit CSS custom properties in css/app.css to match your transit agency's brand colors, typography, and corner radii — no build step or preprocessor required."
+description: "Edit CSS custom properties in css/app.css to restyle City Metro for your transit agency's brand colors, corner radii, and fonts — no build step needed."
 ---
 
 All visual styling in City Metro Trip-Planner is driven by a single block of CSS custom properties declared on `:root` at the top of `css/app.css`. Changing any property there cascades instantly throughout the entire UI — cards, buttons, badges, the bottom navigation bar, the header, form fields, alerts, and the schematic map. Because the app has no build step, you edit the file directly and refresh the browser.
@@ -85,7 +85,7 @@ The complete set of design tokens, exactly as they appear in `css/app.css`:
   Rename these to your agency's brand color. The three values should be: base, a ~10% darker shade for hover, and a very pale tint (~5% opacity over white) for pill fills and focus rings.
 </Accordion>
 
-<Accordion title="Semantic colors — green, amber, red">
+<Accordion title="Semantic colors — green, amber, red, black">
   | Property    | Default   | Used for |
   |-------------|-----------|----------|
   | `--green`   | `#15803d` | "On time" / positive status text |
@@ -109,7 +109,7 @@ The complete set of design tokens, exactly as they appear in `css/app.css`:
 <Accordion title="Elevation — --shadow, --shadow-lg">
   | Property      | Default | Used for |
   |---------------|---------|----------|
-  | `--shadow`    | two-layer soft shadow | Standard card lift |
+  | `--shadow`    | `0 1px 2px rgba(15,23,42,.06), 0 6px 18px rgba(15,23,42,.06)` | Standard card lift |
   | `--shadow-lg` | `0 12px 36px rgba(15,23,42,.18)` | Drawer, autocomplete dropdown |
 
   On dark backgrounds, reduce the shadow opacity or switch to an inset border approach by changing `--shadow` to `none` and giving cards a `1px` border instead.

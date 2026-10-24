@@ -1,5 +1,5 @@
 ---
-title: "How City Metro Trip-Planner Authenticates Riders"
+title: "How City Metro Trip-Planner Handles Authentication"
 sidebarTitle: "Overview"
 description: "PKCE Authorization Code flow, OIDC discovery, a public client, tab-scoped sessionStorage tokens, and OAuthError codes — the full Trip-Planner auth model."
 ---
@@ -174,11 +174,13 @@ export class OAuthError extends Error {
 | `not_configured` | `beginLogin()` | `AUTH.issuer` or `AUTH.clientId` is missing — sign-in is disabled |
 | `discovery_failed` | `discover()` | The OIDC metadata endpoint was unreachable or returned unexpected data |
 | `cancelled` | `completeLogin()` | The provider returned `error=access_denied` — the rider cancelled sign-in |
-| `state_mismatch` | `completeLogin()` | The `state` parameter returned by the provider does not match the stored value |
-| `flow_expired` | `completeLogin()` | More than 10 minutes elapsed between starting and completing sign-in |
-| `token_failed` | `completeLogin()` | The token endpoint was unreachable or rejected the code exchange |
-| `id_token_invalid` | `completeLogin()` | ID token claim validation failed (`iss`, `aud`, `exp`, `nonce`, or `sub`) |
 | `provider_error` | `completeLogin()` | The provider returned a non-`access_denied` error code |
 | `no_flow` | `completeLogin()` | No flow record was found in `sessionStorage` — link was already used or expired |
+| `flow_expired` | `completeLogin()` | More than 10 minutes elapsed between starting and completing sign-in |
+| `state_mismatch` | `completeLogin()` | The `state` parameter returned by the provider does not match the stored value |
+| `missing_code` | `completeLogin()` | The provider redirected back without a `code` parameter |
+| `token_failed` | `completeLogin()` | The token endpoint was unreachable or rejected the code exchange |
+| `id_token_invalid` | `completeLogin()` | ID token claim validation failed (`iss`, `aud`, `exp`, `nonce`, or `sub`) |
+| `unknown` | `callback.js` | An unrecognised error was caught during the callback; wraps any non-`OAuthError` thrown by `completeLogin()` |
 
 </Accordion>

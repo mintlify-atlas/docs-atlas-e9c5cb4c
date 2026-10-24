@@ -26,7 +26,7 @@ The shell reads this value to render the yellow notice bar at the top of every v
 
 ## `STOPS`
 
-Twenty stops make up the demo network. Each stop has a short `id`, a `name`, and `x`/`y` coordinates that place it on the schematic map canvas (arbitrary pixel units — not geographic coordinates). Two stops carry optional flags: four are marked `hub: true` (major interchanges returned first by the autocomplete when a query is blank) and one is marked `noService: true`.
+Twenty stops make up the demo network. Each stop has a short `id`, a `name`, and `x`/`y` coordinates that place it on the schematic map canvas (arbitrary pixel units — not geographic coordinates). Five stops carry optional flags: four are marked `hub: true` (major interchanges returned first by the autocomplete when a query is blank) and one is marked `noService: true`.
 
 <Note>
   The `harbor` stop has `noService: true`. The router will never find a path through Harbor Annex, so searching for a trip to or from it always returns zero results. This intentionally exercises the empty-state UI so it can be styled and tested.

@@ -1,5 +1,5 @@
 ---
-title: "trip-service.js — Places, Trips, and Alerts API"
+title: "trip-service.js — Places, Trips, and Alerts API Reference"
 sidebarTitle: "trip-service.js"
 description: "Full API reference for trip-service.js: searchPlaces, findTrips, alertsForTrip, allLines, allStops, and the setLatency testing helper for the demo network."
 ---
@@ -199,11 +199,14 @@ Returns `Promise<{ trips: Trip[] }>`.
   <Step title="Deduplicate by line sequence">
     Keeps only the fastest trip per unique line-sequence key to avoid showing redundant options.
   </Step>
+  <Step title="Sort by time">
+    For `'arrive'` mode, trips are sorted by descending departure time (`-t.depart`) so the latest-departing option that still meets the arrival deadline comes first. For `'now'` and `'depart'` modes, trips are sorted by ascending arrival time (`t.arrive`) so the earliest-arriving option comes first. Within each sort key, ties are broken by ascending transfer count.
+  </Step>
   <Step title="Filter by time window">
-    Retains only trips within 40 minutes of the best option, then caps the list at 4 results.
+    Retains only trips within 40 minutes of the best option's sort key value, then caps the list at 4 results.
   </Step>
   <Step title="Tag winners">
-    Assigns the comparative labels `'Fastest'`, `'Fewest transfers'`, and `'Least walking'` when multiple results exist.
+    When more than one trip is returned, assigns one comparative label per criterion: `'Fastest'` goes to the trip with the lowest total `duration`; `'Fewest transfers'` to the trip with the lowest `transfers` count; `'Least walking'` to the trip with the lowest `walkMin`. Ties within a criterion are broken by shortest `duration`.
   </Step>
 </Steps>
 

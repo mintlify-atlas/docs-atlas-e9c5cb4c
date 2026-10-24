@@ -1,7 +1,7 @@
 ---
 title: "config.js — AUTH and LINKS Configuration Reference"
 sidebarTitle: "config.js"
-description: "Reference for every AUTH and LINKS field in config.js: which keys are required for sign-in, their defaults, and how unconfigured LINKS fields affect the menu."
+description: "Reference for config.js: AUTH fields required for sign-in, optional redirect URIs, scope defaults, and how empty LINKS values appear in the menu drawer."
 ---
 
 `config.js` is the single file you edit to wire City Metro Trip-Planner to a real transit-account provider and to add deep-links to external City Metro web properties. The app ships with all fields intentionally blank so nothing silently points to a placeholder URL. Sign-in functionality is disabled until `issuer` and `clientId` are filled in; the rest of the app works without them.
@@ -59,8 +59,8 @@ export const LINKS = {
 
 The `AUTH` object controls every aspect of the OpenID Connect sign-in flow. It is imported by `oauth.js` and by `shell.js`.
 
-<ParamField body="origin" type="string" required>
-  The base origin of the City Metro auth service. Fixed value: `https://auth.citymetro.xyz`. This is used by `shell.js` to render the sign-in provider label and by `oauth.js` as the fallback `accountSettings` URL. Do not change it unless the auth service moves.
+<ParamField body="origin" type="string">
+  The base origin of the City Metro auth service. This value is fixed at `https://auth.citymetro.xyz` and is not intended to be changed by operators. It is used by `shell.js` to render the sign-in provider label and by `account.js` as the base for the fallback `accountSettings` URL (`AUTH.origin + '/if/user/'`). Update it only if the auth service itself moves to a new domain.
 </ParamField>
 
 <ParamField body="issuer" type="string">

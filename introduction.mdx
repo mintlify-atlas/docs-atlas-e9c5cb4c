@@ -1,7 +1,7 @@
 ---
 title: "City Metro Trip-Planner: Plan Transit Trips in the Browser"
 sidebarTitle: "Introduction"
-description: "A mobile-first SPA built on plain HTML and vanilla JS ES modules — no build step — with demo-data mode for instant exploration and real-data mode for live service."
+description: "Mobile-first SPA: plain HTML and vanilla JS ES modules, no build step, demo-data mode for instant exploration, real-data mode for live transit service."
 ---
 
 City Metro Trip-Planner is a mobile-first single-page web application that lets riders plan multi-leg rail and bus journeys, receive real-time service alerts, explore an interactive schematic transit map, and authenticate with a City Metro transit account — all from any modern browser, with no native app installation required. The entire application is delivered as a single `index.html` with vanilla JavaScript ES modules; there is no bundler, no framework, and no build step. A demo-data mode ships with realistic fictional stops, lines, and alerts so developers and designers can explore every screen immediately after cloning the repository.
@@ -29,7 +29,7 @@ City Metro Trip-Planner covers the four workflows a rider needs every day:
 
 The app is a **hash-router SPA** with no server-side rendering and no client-side framework. Navigation happens entirely through URL hash changes (`#/`, `#/results`, etc.), which means the server only ever needs to serve one file — `index.html`. JavaScript is loaded as native ES modules over HTTP; no transpilation or bundling is required.
 
-```
+```text
 index.html          ← app shell, single <div id="app">
 js/app.js           ← entry point: mounts shell, starts hash router
 js/components/      ← shell, icons, UI helpers
